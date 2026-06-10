@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package exchange.v1;
+
+option go_package = "github.com/Ayyasythz/matching-engine/api/grpc/pb";
+
+import "google/protobuf/timestamp.proto";
+
+service Exchange {
+  rpc SubmitOrder(SubmitOrderRequest) returns (SubmitOrderResponse);
+  rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
+  rpc StreamEvents(StreamEventsRequest) returns (stream EventResponse);
+}
+
+message SubmitOrderRequest {
+  string id     = 1;
+  string symbol = 2;
+  string side   = 3; // "BUY" or "SELL"
+  string type   = 4; // "LIMIT", "MARKET", "IOC", "FOK"
+  string price  = 5; // decimal string; empty for MARKET
+  string qty    = 6; // decimal string
+}
+
+message SubmitOrderResponse {
+  string order_id = 1;
+  string status   = 2;
+  string error    = 3;
+}
+
+message CancelOrderRequest  { string order_id = 1; }
+message CancelOrderResponse { bool success = 1; string error = 2; }
+
+message StreamEventsRequest { string symbol = 1; }
+
+message EventResponse {
+  string                    type      = 1;
+  uint64                    seq       = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  string                    order_id  = 4;
+  string                    symbol    = 5;
+  string                    price     = 6;
+  string                    qty       = 7;
+  string                    side      = 8;
+  string                    maker_id  = 9;
+  string                    taker_id  = 10;
+}

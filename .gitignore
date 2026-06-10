@@ -1,0 +1,31 @@
+# Binaries
+/matching-engine
+*.exe
+*.out
+
+# Build output
+/bin/
+/dist/
+
+# Go test & coverage
+*.test
+*.prof
+coverage.out
+coverage.html
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Proto generated files
+*.pb.go
