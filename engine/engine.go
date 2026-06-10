@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -12,11 +13,10 @@ type Engine struct {
 	bids     *halfBook
 	asks     *halfBook
 	orderIdx map[string]*Order
-
-	in      chan command
-	events  chan<- Event
-	matcher Matcher
-	seq     uint64
+	ring     *RingBuffer
+	events   chan<- Event
+	matcher  Matcher
+	seq      uint64
 }
 
 type cmdType int
@@ -48,14 +48,21 @@ func newEngine(symbol string, events chan<- Event, matcher Matcher) *Engine {
 		bids:     newHalfBook(Buy),
 		asks:     newHalfBook(Sell),
 		orderIdx: make(map[string]*Order),
-		in:       make(chan command, 8192),
+		ring:     NewRingBuffer(8192),
 		events:   events,
 		matcher:  matcher,
 	}
 }
 
 func (e *Engine) Run() {
-	for cmd := range e.in {
+	for {
+		seq, cmd, ok := e.ring.TryNext()
+		if !ok {
+			runtime.Gosched()
+			continue
+		}
+		e.ring.Advance(seq)
+
 		switch cmd.ctype {
 		case cmdSubmit:
 			e.processOrder(cmd.order)
@@ -71,31 +78,26 @@ func (e *Engine) Run() {
 
 func (e *Engine) Submit(o *Order) error {
 	ch := make(chan error, 1)
-	e.in <- command{
-		ctype: cmdSubmit,
-		order: o,
-		errCh: ch,
-	}
+	seq := e.ring.Claim()
+	e.ring.Write(seq, command{ctype: cmdSubmit, order: o, errCh: ch})
+	e.ring.Publish(seq)
 	return <-ch
 }
 
 func (e *Engine) Cancel(id string) error {
 	ch := make(chan error, 1)
-	e.in <- command{
-		ctype:    cmdCancel,
-		cancelID: id,
-		errCh:    ch,
-	}
+	seq := e.ring.Claim()
+	e.ring.Write(seq, command{ctype: cmdCancel, cancelID: id, errCh: ch})
+	e.ring.Publish(seq)
 	return <-ch
 }
 
-func (e *Engine) Stop() error {
+func (e *Engine) Stop() {
 	ch := make(chan error, 1)
-	e.in <- command{
-		ctype: cmdStop,
-		errCh: ch,
-	}
-	return <-ch
+	seq := e.ring.Claim()
+	e.ring.Write(seq, command{ctype: cmdStop, errCh: ch})
+	e.ring.Publish(seq)
+	<-ch
 }
 
 func (e *Engine) emit(ev Event) {
