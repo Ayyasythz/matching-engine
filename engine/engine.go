@@ -13,10 +13,10 @@ type Engine struct {
 	asks     *halfBook
 	orderIdx map[string]*Order
 
-	in     chan command
-	events chan<- Event
-
-	seq uint64
+	in      chan command
+	events  chan<- Event
+	matcher Matcher
+	seq     uint64
 }
 
 type cmdType int
@@ -35,6 +35,14 @@ type command struct {
 }
 
 func NewEngine(symbol string, events chan<- Event) *Engine {
+	return newEngine(symbol, events, FIFOMatcher{})
+}
+
+func NewProRataEngine(symbol string, events chan<- Event) *Engine {
+	return newEngine(symbol, events, ProRataMatcher{})
+}
+
+func newEngine(symbol string, events chan<- Event, matcher Matcher) *Engine {
 	return &Engine{
 		symbol:   symbol,
 		bids:     newHalfBook(Buy),
@@ -42,6 +50,7 @@ func NewEngine(symbol string, events chan<- Event) *Engine {
 		orderIdx: make(map[string]*Order),
 		in:       make(chan command, 8192),
 		events:   events,
+		matcher:  matcher,
 	}
 }
 
@@ -186,46 +195,38 @@ func (e *Engine) sweep(aggressor *Order, book *halfBook, limitPrice decimal.Deci
 		}
 		execPrice := level.Price
 
-		for !aggressor.isFilled() && !level.isEmpty() {
-			fillQty := decimal.Min(aggressor.RemainingQuantity, level.head().RemainingQuantity)
-
-			maker := level.consume(fillQty)
-			aggressor.fill(fillQty)
-
-			e.emit(Event{
-				Type:    EvTrade,
-				Symbol:  aggressor.Symbol,
-				Price:   execPrice,
-				Qty:     fillQty,
-				MakerID: maker.ID,
-				TakerID: aggressor.ID,
-			})
-
-			aggressorEvType := EvOrderPartiallyFilled
-			if aggressor.isFilled() {
-				aggressorEvType = EvOrderFilled
-			}
-			e.emit(Event{
-				Type:    aggressorEvType,
-				OrderID: aggressor.ID,
-				Symbol:  aggressor.Symbol,
-				Price:   execPrice,
-				Qty:     fillQty,
-			})
-
-			makerEvType := EvOrderPartiallyFilled
-			if maker.isFilled() {
-				makerEvType = EvOrderFilled
-				delete(e.orderIdx, maker.ID)
-			}
-			e.emit(Event{
-				Type:    makerEvType,
-				OrderID: maker.ID,
-				Symbol:  aggressor.Symbol,
-				Price:   execPrice,
-				Qty:     fillQty,
-			})
+		fills := e.matcher.Distribute(level, aggressor.RemainingQuantity)
+		if len(fills) == 0 {
+			break
 		}
+
+		totalFilled := decimal.Zero
+		for _, f := range fills {
+			totalFilled = totalFilled.Add(f.FillQty)
+
+			e.emit(Event{
+				Type: EvTrade, Symbol: aggressor.Symbol,
+				Price: execPrice, Qty: f.FillQty,
+				MakerID: f.Order.ID, TakerID: aggressor.ID,
+			})
+
+			makerEv := EvOrderPartiallyFilled
+			if f.Order.isFilled() {
+				makerEv = EvOrderFilled
+				delete(e.orderIdx, f.Order.ID)
+			}
+			e.emit(Event{Type: makerEv, OrderID: f.Order.ID,
+				Symbol: f.Order.Symbol, Price: execPrice, Qty: f.FillQty})
+		}
+
+		aggressor.fill(totalFilled)
+		aggressorEv := EvOrderPartiallyFilled
+		if aggressor.isFilled() {
+			aggressorEv = EvOrderFilled
+		}
+		e.emit(Event{Type: aggressorEv, OrderID: aggressor.ID,
+			Symbol: aggressor.Symbol, Price: execPrice, Qty: totalFilled})
+
 		book.pruneLevel(execPrice)
 	}
 }

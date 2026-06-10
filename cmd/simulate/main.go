@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"math"
 	"math/rand"
@@ -193,12 +194,20 @@ func fmtNum(n int64) string {
 // ── main ──────────────────────────────────────────────────────────────────────
 
 func main() {
-	// Large event buffer so emit() never blocks the matching loop
+	mode := flag.String("mode", "fifo", "matching algorithm: fifo | prorata")
+	flag.Parse()
+
 	events := make(chan engine.Event, 1<<20)
-	e := engine.NewEngine("BTC-USD", events)
+
+	var e *engine.Engine
+	switch *mode {
+	case "prorata":
+		e = engine.NewProRataEngine("BTC-USD", events)
+	default:
+		e = engine.NewEngine("BTC-USD", events)
+	}
 	go e.Run()
 
-	// Count trades from the event stream (separate goroutine — never blocks engine)
 	go func() {
 		for ev := range events {
 			if ev.Type == engine.EvTrade {
@@ -221,8 +230,8 @@ func main() {
 
 	// ── header ────────────────────────────────────────────────────────────────
 	bar := strings.Repeat("─", 68)
-	fmt.Printf("\n  BTC-USD  |  1 market maker  |  %d traders  |  %s run\n\n",
-		numTraders, simDuration)
+	fmt.Printf("\n  BTC-USD  |  1 market maker  |  %d traders  |  %s run  |  mode: %s\n\n",
+		numTraders, simDuration, *mode)
 	fmt.Printf("  %-7s  %-14s  %-14s  %-11s  %s\n",
 		"Time", "Orders/s", "Trades/s", "Fill rate", "Mid price")
 	fmt.Printf("  %s\n", bar)
