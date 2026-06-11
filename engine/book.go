@@ -1,15 +1,14 @@
 package engine
 
-import (
-	"sort"
+import "github.com/shopspring/decimal"
 
-	"github.com/shopspring/decimal"
-)
-
+// halfBook holds one side of the order book (all bids or all asks).
+// Price levels are indexed by a red-black tree for O(log n) insert/delete
+// and O(1) best-price access via the cached tree min/max.
 type halfBook struct {
 	side   Side
 	levels map[string]*PriceLevel
-	prices []decimal.Decimal
+	tree   rbTree
 }
 
 func newHalfBook(side Side) *halfBook {
@@ -19,11 +18,19 @@ func newHalfBook(side Side) *halfBook {
 	}
 }
 
+// bestLevel returns the highest-priority level for this side:
+// highest price for bids, lowest price for asks.
 func (b *halfBook) bestLevel() *PriceLevel {
-	if len(b.levels) == 0 {
+	var best *rbNode
+	if b.side == Buy {
+		best = b.tree.max()
+	} else {
+		best = b.tree.min()
+	}
+	if best == nil {
 		return nil
 	}
-	return b.levels[b.prices[0].String()]
+	return b.levels[best.price.String()]
 }
 
 func (b *halfBook) getLevel(price decimal.Decimal) *PriceLevel {
@@ -36,21 +43,9 @@ func (b *halfBook) addOrder(o *Order) {
 	if !exists {
 		level = newPriceLevel(o.Price)
 		b.levels[key] = level
-		b.insertPrice(o.Price)
+		b.tree.insert(o.Price) // O(log n)
 	}
 	level.add(o)
-}
-
-func (b *halfBook) insertPrice(price decimal.Decimal) {
-	idx := sort.Search(len(b.prices), func(i int) bool {
-		if b.side == Buy {
-			return b.prices[i].LessThan(price)
-		}
-		return b.prices[i].GreaterThan(price)
-	})
-	b.prices = append(b.prices, decimal.Zero)
-	copy(b.prices[idx+1:], b.prices[idx:])
-	b.prices[idx] = price
 }
 
 func (b *halfBook) pruneLevel(price decimal.Decimal) {
@@ -60,12 +55,7 @@ func (b *halfBook) pruneLevel(price decimal.Decimal) {
 		return
 	}
 	delete(b.levels, key)
-	for i, p := range b.prices {
-		if p.Equal(price) {
-			b.prices = append(b.prices[:i], b.prices[i+1:]...)
-			return
-		}
-	}
+	b.tree.delete(price) // O(log n)
 }
 
 func (b *halfBook) removeOrderByID(id string, price decimal.Decimal) (*Order, bool) {
@@ -73,39 +63,53 @@ func (b *halfBook) removeOrderByID(id string, price decimal.Decimal) (*Order, bo
 	if level == nil {
 		return nil, false
 	}
-
 	o, ok := level.removeByID(id)
 	if ok {
 		b.pruneLevel(o.Price)
 	}
-
 	return o, ok
 }
 
 func (b *halfBook) snapshot() []PriceLevelSnapshot {
-	result := make([]PriceLevelSnapshot, len(b.prices))
-	for i, p := range b.prices {
+	result := make([]PriceLevelSnapshot, 0, b.tree.size)
+	collect := func(p decimal.Decimal) bool {
 		level := b.levels[p.String()]
-		result[i] = PriceLevelSnapshot{
+		result = append(result, PriceLevelSnapshot{
 			Price: p.String(),
 			Qty:   level.TotalQty.String(),
 			Count: len(level.orders),
-		}
+		})
+		return true
+	}
+	// Bids: highest price first; asks: lowest price first.
+	if b.side == Buy {
+		b.tree.descend(collect)
+	} else {
+		b.tree.ascend(collect)
 	}
 	return result
 }
 
 func (b *halfBook) totalQtyAtOrBetterThan(price decimal.Decimal, aggressorSide Side) decimal.Decimal {
 	total := decimal.Zero
-	for _, p := range b.prices {
-		if aggressorSide == Buy && p.GreaterThan(price) {
-			break
-		}
-
-		if aggressorSide == Sell && p.LessThan(price) {
-			break
-		}
-		total = total.Add(b.levels[p.String()].TotalQty)
+	if aggressorSide == Buy {
+		// Aggressor is buying: count asks at or below the limit price.
+		b.tree.ascend(func(p decimal.Decimal) bool {
+			if p.GreaterThan(price) {
+				return false
+			}
+			total = total.Add(b.levels[p.String()].TotalQty)
+			return true
+		})
+	} else {
+		// Aggressor is selling: count bids at or above the limit price.
+		b.tree.descend(func(p decimal.Decimal) bool {
+			if p.LessThan(price) {
+				return false
+			}
+			total = total.Add(b.levels[p.String()].TotalQty)
+			return true
+		})
 	}
 	return total
 }
