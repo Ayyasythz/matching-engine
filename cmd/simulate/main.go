@@ -18,8 +18,6 @@ import (
 	"github.com/Ayyasythz/matching-engine/engine"
 )
 
-// ── config ────────────────────────────────────────────────────────────────────
-
 const (
 	simDuration = 10 * time.Second
 	startPrice  = 50_000.0
@@ -30,8 +28,6 @@ const (
 	mmRefreshMs = 50 // market maker refreshes quotes every 50ms
 )
 
-// ── global stats (all goroutines write, main reads at end) ────────────────────
-
 var (
 	totalOrders int64
 	totalTrades int64
@@ -40,9 +36,6 @@ var (
 	latSamples []int64
 )
 
-// submit wraps eng.Submit and records latency + order count.
-// eng.Submit is synchronous (blocks until the engine acks), so
-// time.Since(t0) captures true end-to-end processing latency.
 func submit(e *engine.Engine, o *engine.Order) {
 	t0 := time.Now()
 	_ = e.Submit(o)
@@ -54,8 +47,6 @@ func submit(e *engine.Engine, o *engine.Order) {
 	latSamples = append(latSamples, ns)
 	latMu.Unlock()
 }
-
-// ── order helpers ─────────────────────────────────────────────────────────────
 
 func limitOrder(side engine.Side, price, qty string) *engine.Order {
 	p, _ := decimal.NewFromString(price)
@@ -69,11 +60,6 @@ func marketOrder(side engine.Side, qty string) *engine.Order {
 }
 
 func price(f float64) string { return fmt.Sprintf("%.2f", f) }
-
-// ── market maker ─────────────────────────────────────────────────────────────
-//
-// Posts a bid and ask around the mid price, refreshing every mmRefreshMs.
-// This is the primary liquidity provider — traders fill against these quotes.
 
 func marketMaker(ctx context.Context, e *engine.Engine, getMid func() float64) {
 	var bidID, askID string
@@ -114,12 +100,6 @@ func marketMaker(ctx context.Context, e *engine.Engine, getMid func() float64) {
 	}
 }
 
-// ── aggressive traders ────────────────────────────────────────────────────────
-//
-// Each trader goroutine submits as fast as possible — since submit() blocks
-// until the engine acks, they naturally saturate the engine's single-threaded
-// capacity. No artificial sleep needed.
-
 func trader(ctx context.Context, e *engine.Engine, getMid func() float64, rng *rand.Rand) {
 	for {
 		select {
@@ -145,10 +125,6 @@ func trader(ctx context.Context, e *engine.Engine, getMid func() float64, rng *r
 	}
 }
 
-// ── price drift ───────────────────────────────────────────────────────────────
-//
-// Simulates random walk price discovery. Mid moves ±$5 every 100ms.
-
 func priceDrift(ctx context.Context, mid *float64, mu *sync.RWMutex) {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	tick := time.NewTicker(100 * time.Millisecond)
@@ -164,8 +140,6 @@ func priceDrift(ctx context.Context, mid *float64, mu *sync.RWMutex) {
 		}
 	}
 }
-
-// ── percentile ────────────────────────────────────────────────────────────────
 
 func percentile(samples []int64, p float64) int64 {
 	if len(samples) == 0 {
@@ -191,8 +165,6 @@ func fmtNum(n int64) string {
 	return fmt.Sprintf("%d", n)
 }
 
-// ── main ──────────────────────────────────────────────────────────────────────
-
 func main() {
 	mode := flag.String("mode", "fifo", "matching algorithm: fifo | prorata")
 	flag.Parse()
@@ -216,7 +188,6 @@ func main() {
 		}
 	}()
 
-	// Mid price shared between market maker, traders, and drift goroutine
 	mid := startPrice
 	var midMu sync.RWMutex
 	getMid := func() float64 {
@@ -228,7 +199,6 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), simDuration)
 	defer cancel()
 
-	// ── header ────────────────────────────────────────────────────────────────
 	bar := strings.Repeat("─", 68)
 	fmt.Printf("\n  BTC-USD  |  1 market maker  |  %d traders  |  %s run  |  mode: %s\n\n",
 		numTraders, simDuration, *mode)
@@ -236,7 +206,6 @@ func main() {
 		"Time", "Orders/s", "Trades/s", "Fill rate", "Mid price")
 	fmt.Printf("  %s\n", bar)
 
-	// ── per-second stats ticker ───────────────────────────────────────────────
 	var lastO, lastT int64
 	elapsed := 0
 	statTick := time.NewTicker(time.Second)
@@ -271,7 +240,6 @@ func main() {
 		}
 	}()
 
-	// ── start participants ────────────────────────────────────────────────────
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -288,11 +256,9 @@ func main() {
 
 	wg.Wait()
 
-	// Give the event consumer goroutine a moment to drain
 	time.Sleep(200 * time.Millisecond)
 	e.Stop()
 
-	// ── final report ──────────────────────────────────────────────────────────
 	total := atomic.LoadInt64(&totalOrders)
 	trades := atomic.LoadInt64(&totalTrades)
 

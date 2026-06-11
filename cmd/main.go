@@ -20,7 +20,6 @@ func main() {
 	eng := engine.NewEngine("BTC-USD", events)
 	go eng.Run()
 
-	// Print all events in background
 	go func() {
 		for ev := range events {
 			fmt.Printf("[%d] %s  order=%s  price=%s  qty=%s  maker=%s  taker=%s\n",
@@ -28,13 +27,11 @@ func main() {
 		}
 	}()
 
-	// Post a resting sell
 	sell := engine.NewOrder(uuid.New().String(), "BTC-USD", engine.Sell, engine.Limit, d("50000.00"), d("0.5"))
 	if err := eng.Submit(sell); err != nil {
 		log.Fatal(err)
 	}
 
-	// Cross it with a market buy
 	buy := engine.NewOrder(uuid.New().String(), "BTC-USD", engine.Buy, engine.Market, decimal.Zero, d("0.5"))
 	if err := eng.Submit(buy); err != nil {
 		log.Fatal(err)

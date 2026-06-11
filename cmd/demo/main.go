@@ -14,21 +14,19 @@ import (
 func d(s string) decimal.Decimal { v, _ := decimal.NewFromString(s); return v }
 func uid() string                { return uuid.New().String() }
 
-// scenario is a fixed set of resting orders at one price level.
-// The same scenario runs under both algorithms so the output is directly comparable.
 var scenario = []struct {
 	name string
 	qty  int
 }{
-	{"A", 200}, // 20% of total book
-	{"B", 500}, // 50% of total book
-	{"C", 300}, // 30% of total book
+	{"A", 200},
+	{"B", 500},
+	{"C", 300},
 }
 
 const (
 	levelPrice  = "300.00"
-	incomingQty = 999 // 40% of total book (1000)
-	maxBarWidth = 36  // chars for the largest order (B=500)
+	incomingQty = 999
+	maxBarWidth = 36
 	maxQty      = 500
 )
 

@@ -23,6 +23,7 @@ coverage.html
 .vscode/
 *.swp
 *.swo
+/docs
 
 # macOS
 .DS_Store

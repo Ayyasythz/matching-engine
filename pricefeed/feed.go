@@ -28,7 +28,6 @@ type Feed struct {
 	lastLog time.Time
 }
 
-// New polls the CoinGecko BTC-USD spot price.
 func New(interval time.Duration) *Feed {
 	return NewWithURL(CoinGeckoBTCUSD, interval)
 }
@@ -41,16 +40,12 @@ func NewWithURL(url string, interval time.Duration) *Feed {
 	}
 }
 
-// Latest returns the last fetched price; ok is false until the first
-// successful fetch.
 func (f *Feed) Latest() (decimal.Decimal, bool) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return f.price, f.ok
 }
 
-// Subscribe returns a channel notified on every price *change*.
-// Slow subscribers miss updates rather than blocking the feed.
 func (f *Feed) Subscribe() <-chan decimal.Decimal {
 	ch := make(chan decimal.Decimal, 16)
 	f.mu.Lock()
@@ -59,7 +54,6 @@ func (f *Feed) Subscribe() <-chan decimal.Decimal {
 	return ch
 }
 
-// Run polls until ctx is cancelled.
 func (f *Feed) Run(ctx context.Context) {
 	ticker := time.NewTicker(f.interval)
 	defer ticker.Stop()
@@ -76,7 +70,6 @@ func (f *Feed) Run(ctx context.Context) {
 
 func (f *Feed) poll() {
 	if err := f.fetchOnce(); err != nil {
-		// Keep last known price; log at most once per minute.
 		f.mu.Lock()
 		if time.Since(f.lastLog) > time.Minute {
 			f.lastLog = time.Now()

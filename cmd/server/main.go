@@ -39,7 +39,6 @@ func main() {
 		feed := pricefeed.New(*feedInterval)
 		go feed.Run(ctx)
 
-		// Forward index-price changes to SSE clients.
 		go func() {
 			for p := range feed.Subscribe() {
 				srv.BroadcastIndexPrice(p)
