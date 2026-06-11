@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	httpapi "github.com/Ayyasythz/matching-engine/api/httpapi"
@@ -14,7 +15,11 @@ import (
 )
 
 func main() {
-	addr := flag.String("addr", ":8080", "HTTP server address")
+	defaultAddr := ":8080"
+	if port := os.Getenv("PORT"); port != "" {
+		defaultAddr = ":" + port
+	}
+	addr := flag.String("addr", defaultAddr, "HTTP server address")
 	frontend := flag.String("frontend", "./frontend", "path to frontend static files")
 	mode := flag.String("mode", "fifo", "matching algorithm: fifo | prorata")
 	anchor := flag.Bool("anchor", true, "anchor the book to the live BTC price with a market-maker bot")
