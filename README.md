@@ -169,7 +169,7 @@ BenchmarkTrade_MarketAgainstResting-10    619536    5898 ns/op    2282 B/op    7
 ## Testing
 
 ```bash
-go test ./...
+go test ./engine/... ./api/httpapi/... ./pricefeed/... ./marketmaker/...
 ```
 
 The test suite covers:
