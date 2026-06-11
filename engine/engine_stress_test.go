@@ -146,6 +146,9 @@ func TestSmoke_TradeEventHasCorrectMakerAndTaker(t *testing.T) {
 // High-volume sequential: submit N alternating buy/sell limit pairs.
 // Every pair should produce exactly one trade; the book must be empty at the end.
 func TestStress_SequentialLimitPairs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping stress test in short mode")
+	}
 	const N = 10_000
 	eng, events := newTestEngine(t)
 
@@ -178,6 +181,9 @@ func TestStress_SequentialLimitPairs(t *testing.T) {
 // Concurrent producers: multiple goroutines submit orders simultaneously.
 // All submitted quantities must be accounted for in trade fill totals.
 func TestStress_ConcurrentProducers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping stress test in short mode")
+	}
 	const (
 		goroutines = 8
 		perG       = 500 // limit orders per goroutine

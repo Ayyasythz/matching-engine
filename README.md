@@ -169,6 +169,10 @@ BenchmarkTrade_MarketAgainstResting-10    619536    5898 ns/op    2282 B/op    7
 ## Testing
 
 ```bash
+# Unit tests only (fast, ~10s)
+go test ./engine/... ./api/httpapi/... ./pricefeed/... ./marketmaker/... -short
+
+# All tests including stress tests
 go test ./engine/... ./api/httpapi/... ./pricefeed/... ./marketmaker/...
 ```
 
