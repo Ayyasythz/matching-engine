@@ -14,7 +14,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-const CoinbaseBTCUSD = "https://api.coinbase.com/v2/prices/BTC-USD/spot"
+const CoinGeckoBTCUSD = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
 
 type Feed struct {
 	url      string
@@ -28,9 +28,9 @@ type Feed struct {
 	lastLog time.Time
 }
 
-// New polls the Coinbase BTC-USD spot price.
+// New polls the CoinGecko BTC-USD spot price.
 func New(interval time.Duration) *Feed {
-	return NewWithURL(CoinbaseBTCUSD, interval)
+	return NewWithURL(CoinGeckoBTCUSD, interval)
 }
 
 func NewWithURL(url string, interval time.Duration) *Feed {
@@ -87,9 +87,9 @@ func (f *Feed) poll() {
 }
 
 type spotResponse struct {
-	Data struct {
-		Amount string `json:"amount"`
-	} `json:"data"`
+	Bitcoin struct {
+		USD json.Number `json:"usd"`
+	} `json:"bitcoin"`
 }
 
 func (f *Feed) fetchOnce() error {
@@ -105,9 +105,9 @@ func (f *Feed) fetchOnce() error {
 	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
 		return fmt.Errorf("decode spot price: %w", err)
 	}
-	p, err := decimal.NewFromString(sr.Data.Amount)
+	p, err := decimal.NewFromString(sr.Bitcoin.USD.String())
 	if err != nil || p.LessThanOrEqual(decimal.Zero) {
-		return fmt.Errorf("invalid spot price %q", sr.Data.Amount)
+		return fmt.Errorf("invalid spot price %q", sr.Bitcoin.USD)
 	}
 
 	f.mu.Lock()

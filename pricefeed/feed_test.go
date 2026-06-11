@@ -11,7 +11,7 @@ import (
 
 func TestFetchOnceParsesPrice(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"data":{"amount":"104231.50","base":"BTC","currency":"USD"}}`))
+		w.Write([]byte(`{"bitcoin":{"usd":104231.50}}`))
 	}))
 	defer srv.Close()
 
@@ -35,7 +35,7 @@ func TestFetchErrorKeepsLastPrice(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		w.Write([]byte(`{"data":{"amount":"100.00"}}`))
+		w.Write([]byte(`{"bitcoin":{"usd":100.00}}`))
 	}))
 	defer srv.Close()
 
@@ -54,9 +54,9 @@ func TestFetchErrorKeepsLastPrice(t *testing.T) {
 }
 
 func TestSubscribeNotifiedOnChange(t *testing.T) {
-	price := `"100.00"`
+	price := `100.00`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"data":{"amount":` + price + `}}`))
+		w.Write([]byte(`{"bitcoin":{"usd":` + price + `}}`))
 	}))
 	defer srv.Close()
 
@@ -81,7 +81,7 @@ func TestSubscribeNotifiedOnChange(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 
-	price = `"101.00"`
+	price = `101.00`
 	f.fetchOnce()
 	select {
 	case p := <-ch:
