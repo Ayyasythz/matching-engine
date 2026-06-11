@@ -25,6 +25,7 @@ const (
 	cmdSubmit cmdType = iota
 	cmdCancel
 	cmdStop
+	cmdSnapshot
 )
 
 type command struct {
@@ -32,6 +33,7 @@ type command struct {
 	order    *Order
 	cancelID string
 	errCh    chan error
+	snapCh   chan BookSnapshot
 }
 
 func NewEngine(symbol string, events chan<- Event) *Engine {
@@ -72,6 +74,8 @@ func (e *Engine) Run() {
 		case cmdStop:
 			cmd.errCh <- nil
 			return
+		case cmdSnapshot:
+			cmd.snapCh <- e.snapshot()
 		}
 	}
 }
@@ -98,6 +102,22 @@ func (e *Engine) Stop() {
 	e.ring.Write(seq, command{ctype: cmdStop, errCh: ch})
 	e.ring.Publish(seq)
 	<-ch
+}
+
+func (e *Engine) Snapshot() BookSnapshot {
+	ch := make(chan BookSnapshot, 1)
+	seq := e.ring.Claim()
+	e.ring.Write(seq, command{ctype: cmdSnapshot, snapCh: ch})
+	e.ring.Publish(seq)
+	return <-ch
+}
+
+func (e *Engine) snapshot() BookSnapshot {
+	return BookSnapshot{
+		Symbol: e.symbol,
+		Bids:   e.bids.snapshot(),
+		Asks:   e.asks.snapshot(),
+	}
 }
 
 func (e *Engine) emit(ev Event) {
@@ -129,6 +149,12 @@ func (e *Engine) processOrder(o *Order) {
 		e.matchIOC(o)
 	case FOK:
 		e.matchFOK(o)
+	}
+
+	// Remove non-resting orders from the index. Resting orders (open or
+	// partially filled limit orders) stay so Cancel() can look them up.
+	if o.Status != StatusOpen && o.Status != StatusPartial {
+		delete(e.orderIdx, o.ID)
 	}
 }
 

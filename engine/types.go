@@ -72,3 +72,15 @@ func (o *Order) fill(qty decimal.Decimal) {
 func (o *Order) isFilled() bool {
 	return o.RemainingQuantity.Equal(decimal.Zero)
 }
+
+type BookSnapshot struct {
+	Symbol string               `json:"symbol"`
+	Bids   []PriceLevelSnapshot `json:"bids"`
+	Asks   []PriceLevelSnapshot `json:"asks"`
+}
+
+type PriceLevelSnapshot struct {
+	Price string `json:"price"`
+	Qty   string `json:"qty"`
+	Count int    `json:"count"`
+}

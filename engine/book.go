@@ -82,6 +82,19 @@ func (b *halfBook) removeOrderByID(id string, price decimal.Decimal) (*Order, bo
 	return o, ok
 }
 
+func (b *halfBook) snapshot() []PriceLevelSnapshot {
+	result := make([]PriceLevelSnapshot, len(b.prices))
+	for i, p := range b.prices {
+		level := b.levels[p.String()]
+		result[i] = PriceLevelSnapshot{
+			Price: p.String(),
+			Qty:   level.TotalQty.String(),
+			Count: len(level.orders),
+		}
+	}
+	return result
+}
+
 func (b *halfBook) totalQtyAtOrBetterThan(price decimal.Decimal, aggressorSide Side) decimal.Decimal {
 	total := decimal.Zero
 	for _, p := range b.prices {
