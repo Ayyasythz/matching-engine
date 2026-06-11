@@ -888,6 +888,11 @@ select:focus { border-color: var(--gold); }
   </div>
   <span id="h-price">—</span>
   <span id="h-change"></span>
+  <div class="hdiv"></div>
+  <div class="symbol-wrap">
+    <div class="symbol-name" id="h-index" style="font-variant-numeric:tabular-nums">—</div>
+    <div class="symbol-full">Live BTC · CoinGecko</div>
+  </div>
   <div class="spacer"></div>
   <div class="h-traders">
     <div class="pulse-dot"></div>
@@ -1623,6 +1628,13 @@ function connectSSE() {
 }
 
 function onEvent(ev) {
+  if (ev.type === 'INDEX_PRICE') {
+    const el = document.getElementById('h-index');
+    el.textContent = '$' + fmt(parseFloat(ev.price));
+    el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    return;
+  }
+
   document.getElementById('seq-val').textContent = ev.seq;
 
   const isMine      = myOrderIds.has(ev.order_id) || myOrderIds.has(ev.maker_id) || myOrderIds.has(ev.taker_id);

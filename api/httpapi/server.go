@@ -71,6 +71,11 @@ type Server struct {
 	balances     map[string]*balance     // sessID  → balance
 	reservations map[string]*reservation // orderID → hold
 
+	// Last external index price, replayed to new SSE connections.
+	indexMu    sync.RWMutex
+	indexPrice decimal.Decimal
+	indexOK    bool
+
 	activeConns int64 // atomic
 }
 
@@ -110,12 +115,20 @@ func (s *Server) broadcast(ev engine.Event) {
 
 // BroadcastIndexPrice pushes the external index price to all SSE clients.
 func (s *Server) BroadcastIndexPrice(p decimal.Decimal) {
-	s.broadcast(engine.Event{
+	s.indexMu.Lock()
+	s.indexPrice = p
+	s.indexOK = true
+	s.indexMu.Unlock()
+	s.broadcast(indexPriceEvent(p))
+}
+
+func indexPriceEvent(p decimal.Decimal) engine.Event {
+	return engine.Event{
 		Type:      "INDEX_PRICE",
 		Symbol:    "BTC-USD",
 		Price:     p,
 		Timestamp: time.Now(),
-	})
+	}
 }
 
 func (s *Server) applyEventToRecords(ev engine.Event) {
@@ -579,6 +592,16 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 	ch := s.subscribe()
 	defer s.unsubscribe(ch)
+
+	// Replay the last index price so new clients see it immediately.
+	s.indexMu.RLock()
+	if s.indexOK {
+		if data, err := json.Marshal(indexPriceEvent(s.indexPrice)); err == nil {
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		}
+	}
+	s.indexMu.RUnlock()
 
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
