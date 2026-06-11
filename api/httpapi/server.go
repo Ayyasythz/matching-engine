@@ -28,6 +28,17 @@ var (
 type balance struct {
 	USD decimal.Decimal
 	BTC decimal.Decimal
+	// Funds held by open orders. Available = total − reserved.
+	ReservedUSD decimal.Decimal
+	ReservedBTC decimal.Decimal
+}
+
+// reservation tracks the hold one open order has on its session's balance.
+type reservation struct {
+	sessID     string
+	side       engine.Side
+	perUnitUSD decimal.Decimal // USD held per unit qty (buy orders only)
+	qtyLeft    decimal.Decimal // unfilled quantity still held
 }
 
 type orderRecord struct {
@@ -56,8 +67,9 @@ type Server struct {
 	sessionByOrder map[string]string       // orderID  → sessID
 
 	// Per-session balances
-	balanceMu sync.RWMutex
-	balances  map[string]*balance // sessID → balance
+	balanceMu    sync.RWMutex
+	balances     map[string]*balance     // sessID  → balance
+	reservations map[string]*reservation // orderID → hold
 
 	activeConns int64 // atomic
 }
@@ -70,6 +82,7 @@ func NewServer(eng *engine.Engine, events <-chan engine.Event) *Server {
 		sessions:       make(map[string][]string),
 		sessionByOrder: make(map[string]string),
 		balances:       make(map[string]*balance),
+		reservations:   make(map[string]*reservation),
 	}
 	go s.fanOut()
 	return s
@@ -114,6 +127,11 @@ func (s *Server) applyEventToRecords(ev engine.Event) {
 		}
 	}
 
+	// Release holds: cancels/rejects free the remainder.
+	if ev.OrderID != "" && (ev.Type == engine.EvOrderCancelled || ev.Type == engine.EvOrderRejected) {
+		s.releaseAll(ev.OrderID)
+	}
+
 	// Update balances on every trade
 	if ev.Type == engine.EvTrade {
 		s.applyTradeToBalances(ev)
@@ -122,6 +140,9 @@ func (s *Server) applyEventToRecords(ev engine.Event) {
 
 // applyTradeToBalances debits and credits both sides of a trade.
 func (s *Server) applyTradeToBalances(ev engine.Event) {
+	s.releaseQty(ev.MakerID, ev.Qty)
+	s.releaseQty(ev.TakerID, ev.Qty)
+
 	s.orderMu.RLock()
 	makerRec  := s.orders[ev.MakerID]
 	takerRec  := s.orders[ev.TakerID]
@@ -153,6 +174,59 @@ func (s *Server) applyTradeToBalances(ev engine.Event) {
 		}
 	}
 	s.balanceMu.Unlock()
+}
+
+// reserve places a hold for a new open order. Caller must hold balanceMu.
+func (s *Server) reserve(sessID, orderID string, side engine.Side, perUnitUSD, qty decimal.Decimal) {
+	bal := s.ensureBalance(sessID)
+	s.reservations[orderID] = &reservation{
+		sessID: sessID, side: side, perUnitUSD: perUnitUSD, qtyLeft: qty,
+	}
+	if side == engine.Buy {
+		bal.ReservedUSD = bal.ReservedUSD.Add(perUnitUSD.Mul(qty))
+	} else {
+		bal.ReservedBTC = bal.ReservedBTC.Add(qty)
+	}
+}
+
+// releaseQty releases the hold on a filled portion of an order.
+func (s *Server) releaseQty(orderID string, qty decimal.Decimal) {
+	s.balanceMu.Lock()
+	defer s.balanceMu.Unlock()
+	r, ok := s.reservations[orderID]
+	if !ok {
+		return
+	}
+	if qty.GreaterThan(r.qtyLeft) {
+		qty = r.qtyLeft
+	}
+	bal := s.ensureBalance(r.sessID)
+	if r.side == engine.Buy {
+		bal.ReservedUSD = bal.ReservedUSD.Sub(r.perUnitUSD.Mul(qty))
+	} else {
+		bal.ReservedBTC = bal.ReservedBTC.Sub(qty)
+	}
+	r.qtyLeft = r.qtyLeft.Sub(qty)
+	if r.qtyLeft.LessThanOrEqual(decimal.Zero) {
+		delete(s.reservations, orderID)
+	}
+}
+
+// releaseAll drops an order's remaining hold (cancel/reject).
+func (s *Server) releaseAll(orderID string) {
+	s.balanceMu.Lock()
+	defer s.balanceMu.Unlock()
+	r, ok := s.reservations[orderID]
+	if !ok {
+		return
+	}
+	bal := s.ensureBalance(r.sessID)
+	if r.side == engine.Buy {
+		bal.ReservedUSD = bal.ReservedUSD.Sub(r.perUnitUSD.Mul(r.qtyLeft))
+	} else {
+		bal.ReservedBTC = bal.ReservedBTC.Sub(r.qtyLeft)
+	}
+	delete(s.reservations, orderID)
 }
 
 // ensureBalance returns the session's balance, initialising it if new.
@@ -310,31 +384,55 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Check available balance before submitting
+	// Check available balance (total minus holds from open orders), then
+	// place a hold for this order.
 	sess := sessionFrom(r)
+
+	// Market buys have no limit price: hold bestAsk × 1.05 per unit.
+	perUnitUSD := price
+	if side == engine.Buy && otype == engine.Market {
+		snap := s.eng.Snapshot()
+		if len(snap.Asks) == 0 {
+			writeJSON(w, submitResponse{
+				OrderID: req.ID,
+				Error:   "no liquidity — the book has no sell orders to buy from",
+			}, http.StatusOK)
+			return
+		}
+		bestAsk, err := decimal.NewFromString(snap.Asks[0].Price)
+		if err != nil {
+			writeError(w, "internal error reading book", http.StatusInternalServerError)
+			return
+		}
+		perUnitUSD = bestAsk.Mul(decimal.RequireFromString("1.05"))
+	}
+
 	s.balanceMu.Lock()
 	bal := s.ensureBalance(sess)
-	if side == engine.Buy && otype != engine.Market {
-		required := qty.Mul(price)
-		if bal.USD.LessThan(required) {
+	if side == engine.Buy {
+		required := qty.Mul(perUnitUSD)
+		available := bal.USD.Sub(bal.ReservedUSD)
+		if available.LessThan(required) {
 			s.balanceMu.Unlock()
 			writeJSON(w, submitResponse{
 				OrderID: req.ID,
-				Error:   fmt.Sprintf("insufficient USD balance — need $%s, have $%s", required.StringFixed(2), bal.USD.StringFixed(2)),
+				Error:   fmt.Sprintf("insufficient USD balance — need $%s, have $%s available", required.StringFixed(2), available.StringFixed(2)),
 			}, http.StatusOK)
 			return
 		}
 	}
 	if side == engine.Sell {
-		if bal.BTC.LessThan(qty) {
+		available := bal.BTC.Sub(bal.ReservedBTC)
+		if available.LessThan(qty) {
 			s.balanceMu.Unlock()
 			writeJSON(w, submitResponse{
 				OrderID: req.ID,
-				Error:   fmt.Sprintf("insufficient BTC balance — need %s BTC, have %s BTC", qty.StringFixed(4), bal.BTC.StringFixed(4)),
+				Error:   fmt.Sprintf("insufficient BTC balance — need %s BTC, have %s BTC available", qty.StringFixed(4), available.StringFixed(4)),
 			}, http.StatusOK)
 			return
 		}
 	}
+	s.reserve(sess, req.ID, side, perUnitUSD, qty)
 	s.balanceMu.Unlock()
 
 	o := engine.NewOrder(req.ID, req.Symbol, side, otype, price, qty)
@@ -357,6 +455,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	s.orderMu.Unlock()
 
 	if err := s.eng.Submit(o); err != nil {
+		s.releaseAll(o.ID)
 		s.orderMu.Lock()
 		rec.Status = "REJECTED"
 		s.orderMu.Unlock()
