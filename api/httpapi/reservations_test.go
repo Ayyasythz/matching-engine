@@ -78,3 +78,23 @@ func TestFillReleasesFilledPortion(t *testing.T) {
 		t.Fatalf("USD = %s, want 75500", bal.USD)
 	}
 }
+
+func TestBroadcastIndexPriceReachesSubscribers(t *testing.T) {
+	s := newTestServer()
+	ch := s.subscribe()
+	defer s.unsubscribe(ch)
+
+	s.BroadcastIndexPrice(d("104231.50"))
+
+	select {
+	case ev := <-ch:
+		if ev.Type != "INDEX_PRICE" {
+			t.Fatalf("type = %s, want INDEX_PRICE", ev.Type)
+		}
+		if !ev.Price.Equal(d("104231.50")) {
+			t.Fatalf("price = %s", ev.Price)
+		}
+	default:
+		t.Fatal("no event delivered to subscriber")
+	}
+}

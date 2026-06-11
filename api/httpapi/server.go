@@ -93,15 +93,29 @@ func NewServer(eng *engine.Engine, events <-chan engine.Event) *Server {
 func (s *Server) fanOut() {
 	for ev := range s.events {
 		s.applyEventToRecords(ev)
-		s.mu.RLock()
-		for _, sub := range s.subs {
-			select {
-			case sub <- ev:
-			default:
-			}
-		}
-		s.mu.RUnlock()
+		s.broadcast(ev)
 	}
+}
+
+func (s *Server) broadcast(ev engine.Event) {
+	s.mu.RLock()
+	for _, sub := range s.subs {
+		select {
+		case sub <- ev:
+		default:
+		}
+	}
+	s.mu.RUnlock()
+}
+
+// BroadcastIndexPrice pushes the external index price to all SSE clients.
+func (s *Server) BroadcastIndexPrice(p decimal.Decimal) {
+	s.broadcast(engine.Event{
+		Type:      "INDEX_PRICE",
+		Symbol:    "BTC-USD",
+		Price:     p,
+		Timestamp: time.Now(),
+	})
 }
 
 func (s *Server) applyEventToRecords(ev engine.Event) {
