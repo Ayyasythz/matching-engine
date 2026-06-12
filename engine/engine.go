@@ -1,12 +1,17 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"time"
 
 	"github.com/shopspring/decimal"
 )
+
+// ErrEngineStopped is returned by Submit/Cancel/Snapshot when the engine is no
+// longer running.
+var ErrEngineStopped = errors.New("engine is stopped")
 
 type Engine struct {
 	symbol   string
@@ -17,6 +22,7 @@ type Engine struct {
 	events   chan<- Event
 	matcher  Matcher
 	seq      uint64
+	stopCh   chan struct{} // closed by Run() when it exits
 }
 
 type cmdType int
@@ -53,10 +59,14 @@ func newEngine(symbol string, events chan<- Event, matcher Matcher) *Engine {
 		ring:     NewRingBuffer(8192),
 		events:   events,
 		matcher:  matcher,
+		stopCh:   make(chan struct{}),
 	}
 }
 
+// Run processes engine commands. It must be called in its own goroutine and
+// runs until a cmdStop command is received.
 func (e *Engine) Run() {
+	defer close(e.stopCh)
 	for {
 		seq, cmd, ok := e.ring.TryNext()
 		if !ok {
@@ -85,7 +95,12 @@ func (e *Engine) Submit(o *Order) error {
 	seq := e.ring.Claim()
 	e.ring.Write(seq, command{ctype: cmdSubmit, order: o, errCh: ch})
 	e.ring.Publish(seq)
-	return <-ch
+	select {
+	case err := <-ch:
+		return err
+	case <-e.stopCh:
+		return ErrEngineStopped
+	}
 }
 
 func (e *Engine) Cancel(id string) error {
@@ -93,7 +108,12 @@ func (e *Engine) Cancel(id string) error {
 	seq := e.ring.Claim()
 	e.ring.Write(seq, command{ctype: cmdCancel, cancelID: id, errCh: ch})
 	e.ring.Publish(seq)
-	return <-ch
+	select {
+	case err := <-ch:
+		return err
+	case <-e.stopCh:
+		return ErrEngineStopped
+	}
 }
 
 func (e *Engine) Stop() {
@@ -102,14 +122,21 @@ func (e *Engine) Stop() {
 	e.ring.Write(seq, command{ctype: cmdStop, errCh: ch})
 	e.ring.Publish(seq)
 	<-ch
+	// stopCh is closed by Run() via defer; wait for it to confirm exit.
+	<-e.stopCh
 }
 
-func (e *Engine) Snapshot() BookSnapshot {
+func (e *Engine) Snapshot() (BookSnapshot, error) {
 	ch := make(chan BookSnapshot, 1)
 	seq := e.ring.Claim()
 	e.ring.Write(seq, command{ctype: cmdSnapshot, snapCh: ch})
 	e.ring.Publish(seq)
-	return <-ch
+	select {
+	case snap := <-ch:
+		return snap, nil
+	case <-e.stopCh:
+		return BookSnapshot{}, ErrEngineStopped
+	}
 }
 
 func (e *Engine) snapshot() BookSnapshot {
@@ -120,16 +147,34 @@ func (e *Engine) snapshot() BookSnapshot {
 	}
 }
 
+// emit sends an event to the events channel without blocking the engine
+// goroutine. Events are dropped if the consumer is too slow; callers should
+// use a generously buffered channel.
 func (e *Engine) emit(ev Event) {
 	e.seq++
 	ev.Seq = e.seq
 	ev.Timestamp = time.Now()
 	if e.events != nil {
-		e.events <- ev
+		select {
+		case e.events <- ev:
+		default:
+		}
 	}
 }
 
 func (e *Engine) processOrder(o *Order) {
+	// Engine-level validation: non-market orders must have a positive price.
+	if o.Type != Market && o.Price.LessThanOrEqual(decimal.Zero) {
+		o.Status = StatusRejected
+		e.emit(Event{
+			Type:    EvOrderRejected,
+			OrderID: o.ID,
+			Symbol:  e.symbol,
+			Qty:     o.Quantity,
+		})
+		return
+	}
+
 	e.orderIdx[o.ID] = o
 	e.emit(Event{
 		Type:    EvOrderAccepted,
@@ -194,14 +239,17 @@ func (e *Engine) matchIOC(o *Order) {
 func (e *Engine) matchFOK(o *Order) {
 	opposing := e.opposing(o.Side)
 	available := opposing.totalQtyAtOrBetterThan(o.Price, o.Side)
-	if available.LessThan(o.Quantity) {
+	// Use RemainingQuantity (not Quantity) so a pre-partially-filled order is
+	// checked against what it still needs, not its original size.
+	if available.LessThan(o.RemainingQuantity) {
 		o.Status = StatusRejected
 		e.emit(Event{
 			Type:    EvOrderRejected,
 			OrderID: o.ID,
-			Symbol:  o.Symbol,
-			Qty:     o.Quantity,
+			Symbol:  e.symbol,
+			Qty:     o.RemainingQuantity,
 		})
+		delete(e.orderIdx, o.ID)
 		return
 	}
 	e.sweep(o, opposing, o.Price)

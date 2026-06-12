@@ -11,6 +11,7 @@ A high-throughput order matching engine in Go with a live web UI, real-time BTC 
 - **Live BTC price anchor** — a market-maker bot quotes around the real BTC-USD price (via CoinGecko) so the demo book tracks the real market
 - **Web UI** — order book, trade feed, balance, and portfolio value; updates via Server-Sent Events
 - **Balance accounting** — per-session USD/BTC balances with fund reservation on open orders (no overdraft)
+- **O(log n) price-level insert/delete** — order book backed by a red-black tree; best-price lookup remains O(1)
 - **~297k orders/sec** throughput, p50 latency ~22µs on Apple M1
 
 ---
@@ -46,6 +47,7 @@ go run ./cmd/server -mode prorata -anchor=false
 
 ```
 engine/          Core matching engine (order book, FIFO/pro-rata matchers, disruptor ring buffer)
+  rbtree.go      Intrusive red-black tree used to index price levels in the order book
 api/
   httpapi/       HTTP server — REST API + SSE event stream
   grpc/          gRPC server (generated from proto/)
@@ -180,6 +182,7 @@ The test suite covers:
 - Engine correctness (FIFO priority, partial fills, price improvement, IOC/FOK)
 - Pro-rata fill distribution
 - Disruptor ring buffer concurrency
+- Red-black tree correctness (insertion, deletion, rotations, balance invariants)
 - Smoke tests: multi-level sweeps, cancel, maker/taker event fields
 - Stress tests: 10k sequential pairs, 8-goroutine concurrent producers
 - HTTP API balance reservation and overdraft prevention
@@ -215,3 +218,5 @@ pricefeed (CoinGecko) ──► marketmaker ──► engine.Submit / Cancel
 ```
 
 Orders flow through a lock-free ring buffer into a single-goroutine engine loop, keeping the matching path contention-free. The HTTP layer uses per-session fund reservations to prevent overdraft before submitting to the engine.
+
+Each side of the book (`halfBook`) indexes price levels in a red-black tree so that insert and delete are O(log n) regardless of book depth. The best bid/ask is always the tree's min/max node, accessed in O(1) without a separate sorted slice.

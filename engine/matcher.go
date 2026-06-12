@@ -65,11 +65,19 @@ func (ProRataMatcher) Distribute(level *PriceLevel, incomingQty decimal.Decimal)
 			return fracPart[indices[a]].GreaterThan(fracPart[indices[b]])
 		})
 		for _, idx := range indices {
-			if remainder.LessThan(unit) {
+			if remainder.LessThanOrEqual(decimal.Zero) {
 				break
 			}
-			truncated[idx] = truncated[idx].Add(unit)
-			remainder = remainder.Sub(unit)
+			// Cap each allocation at the order's remaining capacity so that
+			// fractional-qty orders (e.g. 0.7 BTC) are never overfilled when the
+			// unit step (1) exceeds what the order can actually absorb.
+			avail := level.orders[idx].RemainingQuantity.Sub(truncated[idx])
+			if avail.LessThanOrEqual(decimal.Zero) {
+				continue
+			}
+			give := decimal.Min(unit, decimal.Min(avail, remainder))
+			truncated[idx] = truncated[idx].Add(give)
+			remainder = remainder.Sub(give)
 		}
 	}
 

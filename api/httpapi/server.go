@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/Ayyasythz/matching-engine/engine"
 	"github.com/google/uuid"
@@ -154,8 +155,14 @@ func (s *Server) applyEventToRecords(ev engine.Event) {
 		}
 	}
 
-	// Release holds: cancels/rejects free the remainder.
-	if ev.OrderID != "" && (ev.Type == engine.EvOrderCancelled || ev.Type == engine.EvOrderRejected) {
+	// Release holds on terminal events.
+	// Cancels/rejects free the full remainder. Fills are drained incrementally
+	// via trade events (releaseQty), but releaseAll on EvOrderFilled is a
+	// defensive no-op that covers any residual if trade accounting ever drifts.
+	if ev.OrderID != "" &&
+		(ev.Type == engine.EvOrderCancelled ||
+			ev.Type == engine.EvOrderRejected ||
+			ev.Type == engine.EvOrderFilled) {
 		s.releaseAll(ev.OrderID)
 	}
 
@@ -171,8 +178,8 @@ func (s *Server) applyTradeToBalances(ev engine.Event) {
 	s.releaseQty(ev.TakerID, ev.Qty)
 
 	s.orderMu.RLock()
-	makerRec  := s.orders[ev.MakerID]
-	takerRec  := s.orders[ev.TakerID]
+	makerRec := s.orders[ev.MakerID]
+	takerRec := s.orders[ev.TakerID]
 	makerSess := s.sessionByOrder[ev.MakerID]
 	takerSess := s.sessionByOrder[ev.TakerID]
 	s.orderMu.RUnlock()
@@ -203,7 +210,7 @@ func (s *Server) applyTradeToBalances(ev engine.Event) {
 	s.balanceMu.Unlock()
 }
 
-// reserve places a hold for a new open order. Caller must hold balanceMu.
+// reserve places a hold for a new open order. Caller must hold balanceMu write lock.
 func (s *Server) reserve(sessID, orderID string, side engine.Side, perUnitUSD, qty decimal.Decimal) {
 	bal := s.ensureBalance(sessID)
 	s.reservations[orderID] = &reservation{
@@ -239,7 +246,7 @@ func (s *Server) releaseQty(orderID string, qty decimal.Decimal) {
 	}
 }
 
-// releaseAll drops an order's remaining hold (cancel/reject).
+// releaseAll drops an order's remaining hold (cancel/reject/fill).
 func (s *Server) releaseAll(orderID string) {
 	s.balanceMu.Lock()
 	defer s.balanceMu.Unlock()
@@ -292,13 +299,13 @@ func (s *Server) unsubscribe(ch chan engine.Event) {
 
 func (s *Server) Handler(frontendDir string) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/orders",      s.handleSubmit)
-	mux.HandleFunc("/api/orders/",     s.handleCancel)
-	mux.HandleFunc("/api/book",        s.handleBook)
-	mux.HandleFunc("/api/events",      s.handleEvents)
-	mux.HandleFunc("/api/me/orders",   s.handleMyOrders)
-	mux.HandleFunc("/api/me/balance",  s.handleBalance)
-	mux.HandleFunc("/api/presence",    s.handlePresence)
+	mux.HandleFunc("/api/orders", s.handleSubmit)
+	mux.HandleFunc("/api/orders/", s.handleCancel)
+	mux.HandleFunc("/api/book", s.handleBook)
+	mux.HandleFunc("/api/events", s.handleEvents)
+	mux.HandleFunc("/api/me/orders", s.handleMyOrders)
+	mux.HandleFunc("/api/me/balance", s.handleBalance)
+	mux.HandleFunc("/api/presence", s.handlePresence)
 	mux.Handle("/", http.FileServer(http.Dir(frontendDir)))
 	return corsMiddleware(s.sessionMiddleware(mux))
 }
@@ -318,11 +325,14 @@ func ensureSession(w http.ResponseWriter, r *http.Request) string {
 		return c.Value
 	}
 	id := uuid.New().String()
+	// Set Secure when the connection is HTTPS (direct TLS or behind a proxy).
+	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session_id",
 		Value:    id,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   secure,
 		MaxAge:   86400 * 30,
 		SameSite: http.SameSiteLaxMode,
 	})
@@ -363,6 +373,29 @@ type submitResponse struct {
 	OrderID string `json:"order_id"`
 	Status  string `json:"status,omitempty"`
 	Error   string `json:"error,omitempty"`
+}
+
+// sanitizeUsername trims whitespace, enforces a max length, and strips
+// characters that are unsafe in HTML contexts to prevent stored XSS.
+func sanitizeUsername(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "anonymous"
+	}
+	// Remove HTML-dangerous runes.
+	s = strings.Map(func(r rune) rune {
+		if r == '<' || r == '>' || r == '"' || r == '\'' || r == '&' || !unicode.IsPrint(r) {
+			return -1
+		}
+		return r
+	}, s)
+	if len(s) > 32 {
+		s = s[:32]
+	}
+	if s == "" {
+		return "anonymous"
+	}
+	return s
 }
 
 func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
@@ -416,9 +449,16 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFrom(r)
 
 	// Market buys have no limit price: hold bestAsk × 1.05 per unit.
+	// The snapshot is taken before the lock; the check+reserve inside the lock
+	// serialises concurrent requests correctly (second request sees the first's
+	// reservation when it re-reads the available balance).
 	perUnitUSD := price
 	if side == engine.Buy && otype == engine.Market {
-		snap := s.eng.Snapshot()
+		snap, snapErr := s.eng.Snapshot()
+		if snapErr != nil {
+			writeError(w, "engine unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		if len(snap.Asks) == 0 {
 			writeJSON(w, submitResponse{
 				OrderID: req.ID,
@@ -466,7 +506,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 
 	rec := &orderRecord{
 		ID:        o.ID,
-		Username:  req.Username,
+		Username:  sanitizeUsername(req.Username),
 		Side:      string(side),
 		Type:      string(otype),
 		Price:     price.String(),
@@ -504,6 +544,17 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verify that the order belongs to the requesting session.
+	sess := sessionFrom(r)
+	s.orderMu.RLock()
+	owner := s.sessionByOrder[id]
+	s.orderMu.RUnlock()
+
+	if owner == "" || owner != sess {
+		writeError(w, "order not found", http.StatusNotFound)
+		return
+	}
+
 	if err := s.eng.Cancel(id); err != nil {
 		writeJSON(w, map[string]interface{}{"success": false, "error": err.Error()}, http.StatusOK)
 		return
@@ -516,7 +567,12 @@ func (s *Server) handleBook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	writeJSON(w, s.eng.Snapshot(), http.StatusOK)
+	snap, err := s.eng.Snapshot()
+	if err != nil {
+		writeError(w, "engine unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, snap, http.StatusOK)
 }
 
 func (s *Server) handleMyOrders(w http.ResponseWriter, r *http.Request) {
@@ -540,10 +596,10 @@ func (s *Server) handleMyOrders(w http.ResponseWriter, r *http.Request) {
 }
 
 type balanceResponse struct {
-	USD        string `json:"usd"`
-	BTC        string `json:"btc"`
-	StartUSD   string `json:"start_usd"`
-	StartBTC   string `json:"start_btc"`
+	USD      string `json:"usd"`
+	BTC      string `json:"btc"`
+	StartUSD string `json:"start_usd"`
+	StartBTC string `json:"start_btc"`
 }
 
 func (s *Server) handleBalance(w http.ResponseWriter, r *http.Request) {
@@ -553,17 +609,32 @@ func (s *Server) handleBalance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sess := sessionFrom(r)
-	s.balanceMu.Lock()
-	bal := s.ensureBalance(sess)
-	resp := balanceResponse{
-		USD:      bal.USD.StringFixed(2),
-		BTC:      bal.BTC.StringFixed(4),
+
+	// Fast path: read lock only, copy values before releasing.
+	s.balanceMu.RLock()
+	bal, exists := s.balances[sess]
+	var usd, btc decimal.Decimal
+	if exists {
+		usd = bal.USD
+		btc = bal.BTC
+	}
+	s.balanceMu.RUnlock()
+
+	if !exists {
+		// Slow path: initialise balance under write lock.
+		s.balanceMu.Lock()
+		bal = s.ensureBalance(sess)
+		usd = bal.USD
+		btc = bal.BTC
+		s.balanceMu.Unlock()
+	}
+
+	writeJSON(w, balanceResponse{
+		USD:      usd.StringFixed(2),
+		BTC:      btc.StringFixed(4),
 		StartUSD: startUSD.StringFixed(2),
 		StartBTC: startBTC.StringFixed(4),
-	}
-	s.balanceMu.Unlock()
-
-	writeJSON(w, resp, http.StatusOK)
+	}, http.StatusOK)
 }
 
 func (s *Server) handlePresence(w http.ResponseWriter, r *http.Request) {

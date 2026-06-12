@@ -21,7 +21,7 @@ type RingBuffer struct {
 
 	prod      paddedSeq
 	cons      paddedSeq
-	slots     []command
+	slots     []atomic.Value // each slot stores a command; atomic.Value provides proper happens-before on all architectures
 	available []int32
 }
 
@@ -43,7 +43,7 @@ func NewRingBuffer(cap int64) *RingBuffer {
 		cap:       cap,
 		mask:      cap - 1,
 		shift:     shift,
-		slots:     make([]command, cap),
+		slots:     make([]atomic.Value, cap),
 		available: avail,
 	}
 	atomic.StoreInt64(&rb.prod.value, -1)
@@ -64,8 +64,10 @@ func (rb *RingBuffer) Claim() int64 {
 	return seq
 }
 
+// Write stores cmd into the slot for seq. The store is atomic so that TryNext
+// can safely load it on weakly-ordered architectures (ARM) without a data race.
 func (rb *RingBuffer) Write(seq int64, cmd command) {
-	rb.slots[seq&rb.mask] = cmd
+	rb.slots[seq&rb.mask].Store(cmd)
 }
 
 func (rb *RingBuffer) Publish(seq int64) {
@@ -82,7 +84,11 @@ func (rb *RingBuffer) TryNext() (int64, command, bool) {
 		return 0, command{}, false
 	}
 
-	return nextSeq, rb.slots[slot], true
+	v := rb.slots[slot].Load()
+	if v == nil {
+		return 0, command{}, false
+	}
+	return nextSeq, v.(command), true
 }
 
 func (rb *RingBuffer) Advance(seq int64) {

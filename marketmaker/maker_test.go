@@ -28,7 +28,7 @@ func TestRequotePlacesLadder(t *testing.T) {
 
 	m.requote()
 
-	snap := eng.Snapshot()
+	snap, _ := eng.Snapshot()
 	if len(snap.Bids) != 5 || len(snap.Asks) != 5 {
 		t.Fatalf("got %d bids, %d asks; want 5 and 5", len(snap.Bids), len(snap.Asks))
 	}
@@ -55,7 +55,7 @@ func TestRequoteReplacesOldLadder(t *testing.T) {
 	feed.price = decimal.RequireFromString("110000")
 	m.requote()
 
-	snap := eng.Snapshot()
+	snap, _ := eng.Snapshot()
 	if len(snap.Bids) != 5 || len(snap.Asks) != 5 {
 		t.Fatalf("got %d bids, %d asks; want 5 and 5 (old ladder must be cancelled)",
 			len(snap.Bids), len(snap.Asks))
@@ -72,7 +72,7 @@ func TestRequoteIdleWithoutPrice(t *testing.T) {
 
 	m.requote()
 
-	snap := eng.Snapshot()
+	snap, _ := eng.Snapshot()
 	if len(snap.Bids) != 0 || len(snap.Asks) != 0 {
 		t.Fatalf("expected empty book, got %d bids %d asks", len(snap.Bids), len(snap.Asks))
 	}

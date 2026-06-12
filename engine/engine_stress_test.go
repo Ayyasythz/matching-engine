@@ -80,7 +80,8 @@ func TestSmoke_PartialFillLeavesRemainder(t *testing.T) {
 	require.NoError(t, eng.Submit(buy1))
 
 	// sell is now partially filled (4 remaining)
-	snap := eng.Snapshot()
+	snap, err := eng.Snapshot()
+	require.NoError(t, err)
 	require.Len(t, snap.Asks, 1)
 	assert.Equal(t, "4", snap.Asks[0].Qty)
 
@@ -98,7 +99,8 @@ func TestSmoke_PartialFillLeavesRemainder(t *testing.T) {
 	}
 	assert.True(t, total.Equal(d("10")), "total filled should be 10, got %s", total)
 
-	snap = eng.Snapshot()
+	snap, err = eng.Snapshot()
+	require.NoError(t, err)
 	assert.Empty(t, snap.Asks, "ask side should be empty after full fill")
 }
 
@@ -108,12 +110,15 @@ func TestSmoke_CancelRemovesFromBook(t *testing.T) {
 
 	sell := limit(Sell, "100", "5")
 	require.NoError(t, eng.Submit(sell))
-	require.Len(t, eng.Snapshot().Asks, 1)
+	snap2, err2 := eng.Snapshot()
+	require.NoError(t, err2)
+	require.Len(t, snap2.Asks, 1)
 
 	require.NoError(t, eng.Cancel(sell.ID))
 
-	snap := eng.Snapshot()
-	assert.Empty(t, snap.Asks)
+	snap3, err3 := eng.Snapshot()
+	require.NoError(t, err3)
+	assert.Empty(t, snap3.Asks)
 
 	evs := drainAll(events)
 	var cancelled []Event
@@ -173,9 +178,9 @@ func TestStress_SequentialLimitPairs(t *testing.T) {
 		}
 	}
 	assert.Equal(t, N, trades)
-	snap := eng.Snapshot()
-	assert.Empty(t, snap.Bids, "book should be empty when every pair crosses")
-	assert.Empty(t, snap.Asks, "book should be empty when every pair crosses")
+	snapS, _ := eng.Snapshot()
+	assert.Empty(t, snapS.Bids, "book should be empty when every pair crosses")
+	assert.Empty(t, snapS.Asks, "book should be empty when every pair crosses")
 }
 
 // Concurrent producers: multiple goroutines submit orders simultaneously.
@@ -257,12 +262,12 @@ done:
 	assert.True(t, tradeQty.GreaterThan(decimal.Zero), "no trades occurred")
 
 	// Bids + asks can't both be non-empty (crossed book is a correctness bug).
-	snap := eng.Snapshot()
-	if len(snap.Bids) > 0 && len(snap.Asks) > 0 {
+	snapC, _ := eng.Snapshot()
+	if len(snapC.Bids) > 0 && len(snapC.Asks) > 0 {
 		t.Errorf("crossed book: have both bids and asks resting simultaneously")
 	}
 	t.Logf("completed: %d trades, qty=%s, remaining bids=%d asks=%d",
-		tradeCount, tradeQty, len(snap.Bids), len(snap.Asks))
+		tradeCount, tradeQty, len(snapC.Bids), len(snapC.Asks))
 }
 
 // Throughput benchmark: measures how many orders/second the engine sustains.

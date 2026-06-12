@@ -220,13 +220,14 @@ func (t *rbTree) deleteFixup(x *rbNode, xParent *rbNode) {
 				t.rotateLeft(xParent)
 				w = xParent.right
 			}
-			if w == nil {
-				x = xParent
-				xParent = x.parent
-			} else if (w.left == nil || w.left.color == black) &&
-				(w.right == nil || w.right.color == black) {
-				// Case 2: sibling's children are both black.
-				w.color = red
+			if w == nil ||
+				((w.left == nil || w.left.color == black) &&
+					(w.right == nil || w.right.color == black)) {
+				// Case 2: sibling is nil or its children are both black.
+				// Recolor sibling red (when present) and propagate double-black up.
+				if w != nil {
+					w.color = red
+				}
 				x = xParent
 				xParent = x.parent
 			} else {
@@ -257,12 +258,13 @@ func (t *rbTree) deleteFixup(x *rbNode, xParent *rbNode) {
 				t.rotateRight(xParent)
 				w = xParent.left
 			}
-			if w == nil {
-				x = xParent
-				xParent = x.parent
-			} else if (w.right == nil || w.right.color == black) &&
-				(w.left == nil || w.left.color == black) {
-				w.color = red
+			if w == nil ||
+				((w.right == nil || w.right.color == black) &&
+					(w.left == nil || w.left.color == black)) {
+				// Case 2 (mirror): sibling is nil or its children are both black.
+				if w != nil {
+					w.color = red
+				}
 				x = xParent
 				xParent = x.parent
 			} else {
