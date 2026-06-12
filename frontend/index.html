@@ -10,32 +10,104 @@
   <style>
 /* ── Tokens ────────────────────────────────────────────────────────────────── */
 :root {
-  --bg:       #070b18;
-  --s1:       #0c1121;
-  --s2:       #101729;
-  --s3:       #151c30;
-  --bd1:      #1b2238;
-  --bd2:      #222c45;
-  --bd3:      #2c3858;
-  --tx1:      #dce8f8;
-  --tx2:      #7a8fad;
-  --tx3:      #3d4f6a;
-  --gold:     #c9a351;
-  --gold-h:   #e2bc6e;
-  --gold-bg:  rgba(201,163,81,.1);
-  --buy:      #4d8cf5;
-  --buy-s:    #2970e8;
-  --buy-bg:   rgba(77,140,245,.08);
-  --buy-bd:   rgba(77,140,245,.3);
-  --sell:     #e05858;
-  --sell-s:   #c83e3e;
-  --sell-bg:  rgba(224,88,88,.08);
-  --sell-bd:  rgba(224,88,88,.3);
-  --filled:   #3aaa90;
-  --partial:  #d4943a;
-  --cancel:   #4a5a78;
-  --r:        8px;
-  --rs:       5px;
+  color-scheme: dark;
+
+  /* surfaces — neutral charcoal, no tint */
+  --bg:       #0a0c0f;
+  --s1:       #0e1116;
+  --s2:       #12161c;
+  --s3:       #171c23;
+  --bd1:      #1c222b;
+  --bd2:      #262e39;
+  --bd3:      #364152;
+
+  /* text */
+  --tx1:      #e6edf3;
+  --tx2:      #8a98a8;
+  --tx3:      #4d5868;
+
+  /* accent — classic chart green */
+  --gold:     #26a69a;
+  --gold-h:   #3cbfb2;
+  --gold-bg:  rgba(38,166,154,.08);
+  --gold-bd:  rgba(38,166,154,.28);
+
+  /* sides — candlestick green / red */
+  --buy:      #26a69a;
+  --buy-s:    #1d8a80;
+  --buy-bg:   rgba(38,166,154,.08);
+  --buy-bd:   rgba(38,166,154,.3);
+  --sell:     #ef5350;
+  --sell-s:   #d43c39;
+  --sell-bg:  rgba(239,83,80,.08);
+  --sell-bd:  rgba(239,83,80,.3);
+
+  /* statuses */
+  --filled:     #26a69a;
+  --filled-bg:  rgba(38,166,154,.12);
+  --filled-bd:  rgba(38,166,154,.3);
+  --partial:    #d8a23a;
+  --partial-bg: rgba(216,162,58,.12);
+  --partial-bd: rgba(216,162,58,.3);
+  --cancel:     #5a6675;
+  --cancel-bg:  rgba(90,102,117,.12);
+  --cancel-bd:  rgba(90,102,117,.3);
+  --accept-bg:  rgba(255,255,255,.04);
+
+  /* chrome */
+  --overlay:   rgba(8,10,13,.96);
+  --row-line:  rgba(255,255,255,.03);
+  --shadow-lg: 0 24px 64px rgba(0,0,0,.55);
+  --shadow-md: 0 8px 24px rgba(0,0,0,.4);
+
+  --r:  8px;
+  --rs: 5px;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+
+  --bg:       #f2f4f7;
+  --s1:       #ffffff;
+  --s2:       #f8fafc;
+  --s3:       #eef1f5;
+  --bd1:      #e3e8ee;
+  --bd2:      #d0d8e0;
+  --bd3:      #b6c2cf;
+
+  --tx1:      #11181f;
+  --tx2:      #56657a;
+  --tx3:      #9aa7b5;
+
+  --gold:     #089981;
+  --gold-h:   #0aae93;
+  --gold-bg:  rgba(8,153,129,.07);
+  --gold-bd:  rgba(8,153,129,.28);
+
+  --buy:      #089981;
+  --buy-s:    #067a67;
+  --buy-bg:   rgba(8,153,129,.07);
+  --buy-bd:   rgba(8,153,129,.3);
+  --sell:     #e5484d;
+  --sell-s:   #c93338;
+  --sell-bg:  rgba(229,72,77,.06);
+  --sell-bd:  rgba(229,72,77,.3);
+
+  --filled:     #089981;
+  --filled-bg:  rgba(8,153,129,.1);
+  --filled-bd:  rgba(8,153,129,.3);
+  --partial:    #ab7a14;
+  --partial-bg: rgba(171,122,20,.1);
+  --partial-bd: rgba(171,122,20,.3);
+  --cancel:     #74818f;
+  --cancel-bg:  rgba(116,129,143,.12);
+  --cancel-bd:  rgba(116,129,143,.3);
+  --accept-bg:  rgba(17,24,31,.05);
+
+  --overlay:   rgba(240,243,246,.95);
+  --row-line:  rgba(17,24,31,.05);
+  --shadow-lg: 0 24px 64px rgba(30,42,56,.16);
+  --shadow-md: 0 8px 24px rgba(30,42,56,.1);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -49,22 +121,26 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: background .25s ease, color .25s ease;
 }
 
-::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--bd2); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--bd3); }
+
+::selection { background: var(--gold-bd); }
 
 /* ── Welcome overlay ───────────────────────────────────────────────────────── */
 #welcome-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(7,11,24,.96);
+  background: var(--overlay);
   z-index: 8000;
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(6px);
+  backdrop-filter: blur(8px);
 }
 
 .welcome-card {
@@ -74,15 +150,15 @@ body {
   padding: 36px 32px;
   max-width: 440px;
   width: 92%;
-  box-shadow: 0 24px 64px rgba(0,0,0,.5);
+  box-shadow: var(--shadow-lg);
 }
 
 .welcome-card::before {
   content: '';
   display: block;
-  height: 3px;
-  background: linear-gradient(90deg, var(--buy), var(--gold));
-  border-radius: 3px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--gold), transparent);
+  border-radius: 2px;
   margin-bottom: 28px;
 }
 
@@ -93,7 +169,7 @@ body {
   clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
 }
 
-.welcome-title { font-size: 20px; font-weight: 700; color: var(--tx1); }
+.welcome-title { font-size: 20px; font-weight: 700; color: var(--tx1); letter-spacing: -.3px; }
 .welcome-sub   { font-size: 13px; color: var(--tx2); margin-bottom: 24px; line-height: 1.5; }
 
 .welcome-steps {
@@ -143,33 +219,34 @@ body {
   font-size: 14px;
   padding: 10px 12px;
   outline: none;
-  transition: border-color .15s;
+  transition: border-color .15s, box-shadow .15s;
 }
 
-.welcome-input:focus { border-color: var(--gold); }
+.welcome-input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-bg); }
 .welcome-input::placeholder { color: var(--tx3); }
 
 .welcome-btn {
   padding: 10px 20px;
-  background: linear-gradient(135deg, var(--gold), var(--gold-h));
+  background: var(--gold);
   border: none;
   border-radius: var(--rs);
-  color: #000;
+  color: #fff;
   font-family: inherit;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
-  transition: filter .15s;
+  transition: background .15s, transform .08s;
 }
 
-.welcome-btn:hover { filter: brightness(1.1); }
+.welcome-btn:hover  { background: var(--gold-h); }
+.welcome-btn:active { transform: scale(.98); }
 
 .multi-note {
   margin-top: 16px;
   padding: 10px 12px;
   background: var(--gold-bg);
-  border: 1px solid rgba(201,163,81,.2);
+  border: 1px solid var(--gold-bd);
   border-radius: var(--rs);
   font-size: 12px;
   color: var(--gold);
@@ -191,12 +268,14 @@ body {
 .toast {
   padding: 13px 16px;
   background: var(--s2);
+  border: 1px solid var(--bd1);
   border-radius: var(--r);
   border-left: 3px solid var(--gold);
-  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  box-shadow: var(--shadow-md);
   font-size: 13px;
   line-height: 1.5;
   max-width: 300px;
+  color: var(--tx1);
   animation: toastIn .2s ease-out;
   transition: opacity .3s;
 }
@@ -221,13 +300,13 @@ body {
   transition: opacity .15s;
   max-width: 250px;
   background: var(--s1);
-  border: 1px solid var(--gold);
+  border: 1px solid var(--bd3);
   border-radius: var(--r);
   padding: 10px 13px;
   font-size: 12px;
   line-height: 1.6;
   color: var(--tx1);
-  box-shadow: 0 12px 32px rgba(0,0,0,.5);
+  box-shadow: var(--shadow-md);
 }
 
 #tip strong { display: block; color: var(--gold); font-size: 11px; font-weight: 700; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; }
@@ -235,13 +314,13 @@ body {
 .ti {
   display: inline-flex; align-items: center; justify-content: center;
   width: 13px; height: 13px; border-radius: 50%;
-  border: 1px solid rgba(201,163,81,.3);
-  color: var(--gold); font-size: 8px; font-weight: 700;
+  border: 1px solid var(--bd3);
+  color: var(--tx2); font-size: 8px; font-weight: 700;
   cursor: help; vertical-align: middle; margin-left: 4px;
-  flex-shrink: 0; transition: background .15s;
+  flex-shrink: 0; transition: all .15s;
 }
 
-.ti:hover { background: rgba(201,163,81,.15); }
+.ti:hover { border-color: var(--gold); color: var(--gold); background: var(--gold-bg); }
 
 /* ── Header ────────────────────────────────────────────────────────────────── */
 header {
@@ -254,14 +333,7 @@ header {
   gap: 14px;
   flex-shrink: 0;
   position: relative;
-}
-
-header::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, transparent 5%, var(--gold) 40%, var(--buy) 70%, transparent 95%);
-  opacity: .55;
+  transition: background .25s ease;
 }
 
 .logo-diamond {
@@ -271,7 +343,7 @@ header::before {
   flex-shrink: 0;
 }
 
-.logo-text { font-weight: 700; font-size: 13px; color: var(--tx1); }
+.logo-text { font-weight: 700; font-size: 13px; color: var(--tx1); letter-spacing: -.2px; }
 .hdiv { width: 1px; height: 18px; background: var(--bd2); }
 
 .symbol-wrap { display: flex; flex-direction: column; gap: 1px; }
@@ -313,12 +385,12 @@ header::before {
   cursor: pointer; transition: border-color .15s;
 }
 
-.user-chip:hover { border-color: var(--bd3); }
+.user-chip:hover { border-color: var(--gold-bd); }
 
 .user-avatar {
   width: 18px; height: 18px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 9px; font-weight: 700; color: #000;
+  font-size: 9px; font-weight: 700; color: #fff;
   flex-shrink: 0;
 }
 
@@ -334,11 +406,31 @@ header::before {
 
 .share-btn:hover { border-color: var(--gold); color: var(--gold); }
 
-/* ── Main ──────────────────────────────────────────────────────────────────── */
+.theme-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  background: var(--s2);
+  border: 1px solid var(--bd2);
+  border-radius: 50%;
+  font-size: 14px; cursor: pointer;
+  transition: all .15s;
+}
+
+.theme-btn:hover { border-color: var(--gold); }
+
+/* ── Layout ────────────────────────────────────────────────────────────────── */
+.layout {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
 .main {
   flex: 1;
   display: grid;
-  grid-template-columns: 260px 1fr 300px;
+  grid-template-columns: 320px 1fr 290px;
   gap: 1px;
   background: var(--bd1);
   overflow: hidden;
@@ -351,6 +443,7 @@ header::before {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+  transition: background .25s ease;
 }
 
 .ph {
@@ -362,6 +455,43 @@ header::before {
   text-transform: uppercase; letter-spacing: .8px;
   flex-shrink: 0;
   display: flex; align-items: center; gap: 6px;
+}
+
+/* center panel: order book and trades side by side */
+.center-split {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 1px;
+  background: var(--bd1);
+  overflow: hidden;
+  min-height: 0;
+}
+
+.center-col {
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* full-width bottom panel: my orders */
+.bottom-panel {
+  height: 190px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--bd1);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* left panel: scrollable order form */
+.form-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
 }
 
 /* ── Order Book ────────────────────────────────────────────────────────────── */
@@ -423,25 +553,7 @@ header::before {
 .spread-row .mid { color: var(--gold); font-weight: 600; font-variant-numeric: tabular-nums; }
 .spread-row .sp  { font-variant-numeric: tabular-nums; }
 
-/* ── Tabs ──────────────────────────────────────────────────────────────────── */
-.tab-bar { background: var(--s1); border-bottom: 1px solid var(--bd1); display: flex; flex-shrink: 0; }
-
-.tab {
-  padding: 10px 16px;
-  font-size: 11px; font-weight: 600; color: var(--tx2);
-  cursor: pointer; text-transform: uppercase; letter-spacing: .4px;
-  border-bottom: 2px solid transparent;
-  transition: color .15s, border-color .15s;
-}
-
-.tab.active { color: var(--gold); border-bottom-color: var(--gold); }
-
-.tc { flex: 1; overflow: hidden; display: none; flex-direction: column; }
-.tc.active { display: flex; }
-
 /* ── Order Form ────────────────────────────────────────────────────────────── */
-.form-section { padding: 16px; border-bottom: 1px solid var(--bd1); flex-shrink: 0; }
-
 .market-price-bar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 12px;
@@ -488,14 +600,14 @@ input[type="number"] {
   padding: 9px 44px 9px 11px;
   outline: none;
   font-variant-numeric: tabular-nums;
-  transition: border-color .15s;
+  transition: border-color .15s, box-shadow .15s;
   -moz-appearance: textfield;
 }
 
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
 
-input[type="number"]:focus { border-color: var(--gold); }
+input[type="number"]:focus { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-bg); }
 input[type="number"]::placeholder { color: var(--tx3); font-weight: 400; }
 input[type="number"]:disabled { opacity: .3; cursor: not-allowed; }
 
@@ -520,7 +632,7 @@ input[type="number"]:disabled { opacity: .3; cursor: not-allowed; }
 }
 
 .approx-row.warn { color: var(--partial); }
-.approx-row.ok   { color: var(--tx1); }
+.approx-row.ok   { color: var(--tx1); border-color: var(--gold-bd); }
 
 /* Advanced toggle */
 .adv-toggle {
@@ -583,19 +695,14 @@ select:focus { border-color: var(--gold); }
 }
 
 .submit-btn:active { transform: scale(.99); }
-.submit-btn.buy  { background: linear-gradient(135deg, var(--buy-s), var(--buy)); color: #fff; }
-.submit-btn.sell { background: linear-gradient(135deg, var(--sell-s), var(--sell)); color: #fff; }
-.submit-btn:hover { filter: brightness(1.1); }
+.submit-btn.buy  { background: var(--buy);  color: #fff; }
+.submit-btn.sell { background: var(--sell); color: #fff; }
+.submit-btn:hover { filter: brightness(1.12); }
 
 .form-msg { font-size: 11px; min-height: 14px; margin-bottom: 8px; color: var(--sell); font-weight: 500; }
 .form-msg.ok { color: var(--filled); }
 
 /* ── Trades ────────────────────────────────────────────────────────────────── */
-.trades-sec {
-  flex: 1; overflow: hidden;
-  display: flex; flex-direction: column; min-height: 0;
-}
-
 .col-hdr {
   display: grid; padding: 5px 14px;
   font-size: 10px; color: var(--tx3); letter-spacing: .3px;
@@ -608,7 +715,7 @@ select:focus { border-color: var(--gold); }
 .trade-row {
   display: grid; grid-template-columns: 1fr 1fr 1fr;
   padding: 4px 14px;
-  border-bottom: 1px solid rgba(255,255,255,.02);
+  border-bottom: 1px solid var(--row-line);
   animation: fadeIn .2s ease-out;
 }
 
@@ -624,7 +731,7 @@ select:focus { border-color: var(--gold); }
 .orders-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 
 .orders-table thead th {
-  background: var(--s1); padding: 7px 10px;
+  background: var(--s1); padding: 7px 14px;
   font-size: 10px; font-weight: 600; color: var(--tx3);
   text-transform: uppercase; letter-spacing: .4px;
   border-bottom: 1px solid var(--bd1);
@@ -632,13 +739,13 @@ select:focus { border-color: var(--gold); }
 }
 
 .orders-table tbody tr {
-  border-bottom: 1px solid rgba(255,255,255,.025);
+  border-bottom: 1px solid var(--row-line);
   animation: fadeIn .25s ease-out;
   transition: background .1s;
 }
 
 .orders-table tbody tr:hover { background: var(--s1); }
-.orders-table td { padding: 7px 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.orders-table td { padding: 6px 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .empty-cell { text-align: center; color: var(--tx3); padding: 32px; font-size: 12px; }
 
 .bdg {
@@ -651,9 +758,9 @@ select:focus { border-color: var(--gold); }
 .bdg.buy      { color: var(--buy);     border-color: var(--buy-bd);  background: var(--buy-bg); }
 .bdg.sell     { color: var(--sell);    border-color: var(--sell-bd); background: var(--sell-bg); }
 .bdg.open     { color: var(--buy);     border-color: var(--buy-bd); }
-.bdg.partial  { color: var(--partial); border-color: rgba(212,148,58,.3); }
-.bdg.filled   { color: var(--filled);  border-color: rgba(58,170,144,.3); }
-.bdg.cancelled{ color: var(--cancel);  border-color: rgba(74,90,120,.3); }
+.bdg.partial  { color: var(--partial); border-color: var(--partial-bd); }
+.bdg.filled   { color: var(--filled);  border-color: var(--filled-bd); }
+.bdg.cancelled{ color: var(--cancel);  border-color: var(--cancel-bd); }
 .bdg.rejected { color: var(--sell);    border-color: var(--sell-bd); }
 
 .id-mono { font-family: 'Menlo','Monaco',monospace; font-size: 11px; color: var(--tx2); }
@@ -673,19 +780,19 @@ select:focus { border-color: var(--gold); }
 
 .ev {
   padding: 8px 14px;
-  border-bottom: 1px solid rgba(255,255,255,.025);
+  border-bottom: 1px solid var(--row-line);
   animation: fadeIn .2s ease-out;
   transition: background .1s;
 }
 
 .ev.mine {
-  background: rgba(77,140,245,.04);
-  border-left: 2px solid rgba(77,140,245,.3);
+  background: var(--gold-bg);
+  border-left: 2px solid var(--gold-bd);
   padding-left: 12px;
 }
 
 .ev.mine-trade {
-  background: rgba(77,140,245,.06);
+  background: var(--buy-bg);
   border-left: 2px solid var(--buy);
   padding-left: 12px;
 }
@@ -698,12 +805,12 @@ select:focus { border-color: var(--gold); }
   font-size: 9px; font-weight: 700; letter-spacing: .6px;
 }
 
-.ev-tag.trade   { background: rgba(77,140,245,.14); color: var(--buy); }
-.ev-tag.filled  { background: rgba(58,170,144,.12); color: var(--filled); }
-.ev-tag.partial { background: rgba(212,148,58,.12); color: var(--partial); }
-.ev-tag.cancel  { background: rgba(74,90,120,.1);   color: var(--cancel); }
-.ev-tag.reject  { background: rgba(224,88,88,.12);  color: var(--sell); }
-.ev-tag.accept  { background: rgba(255,255,255,.04); color: var(--tx3); }
+.ev-tag.trade   { background: var(--buy-bg);     color: var(--buy); }
+.ev-tag.filled  { background: var(--filled-bg);  color: var(--filled); }
+.ev-tag.partial { background: var(--partial-bg); color: var(--partial); }
+.ev-tag.cancel  { background: var(--cancel-bg);  color: var(--cancel); }
+.ev-tag.reject  { background: var(--sell-bg);    color: var(--sell); }
+.ev-tag.accept  { background: var(--accept-bg);  color: var(--tx3); }
 
 .ev-main { font-size: 12px; font-weight: 500; flex: 1; color: var(--tx1); }
 .ev-main.mine { color: var(--tx1); }
@@ -780,7 +887,7 @@ select:focus { border-color: var(--gold); }
 }
 
 .balance-cell.active {
-  background: rgba(201,163,81,.06);
+  background: var(--gold-bg);
   padding: 6px 8px;
   margin: -4px;
 }
@@ -905,175 +1012,175 @@ select:focus { border-color: var(--gold); }
   <button class="share-btn" onclick="shareLink()">
     <span>🔗</span> Share
   </button>
+  <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle dark / light mode">☀️</button>
 </header>
 
 <!-- ── Main ────────────────────────────────────────────────────────────────── -->
+<div class="layout">
 <div class="main">
 
-  <!-- ── Order Book ───────────────────────────────────────────────────────── -->
+  <!-- ── LEFT: Place Order ──────────────────────────────────────────────────── -->
   <div class="panel">
     <div class="ph">
-      Market Depth
+      Place Order
       <span class="ti"
-        data-tip-title="Market Depth"
-        data-tip="Shows all resting orders grouped by price. Sellers above the spread, buyers below. The wider the bar, the more volume at that level. When a buyer and seller agree on price, a trade executes instantly.">ⓘ</span>
+        data-tip-title="Place Order"
+        data-tip="Choose a side, an amount, and a price. Limit orders rest in the book until matched; advanced types (IOC, FOK) control how aggressively the order fills.">ⓘ</span>
     </div>
-    <div class="book-scroll" id="book-scroll">
-      <div class="book-side-label ask">↓ SELLERS (asking this price or higher)</div>
-      <div class="book-col-hdr">
-        <span>Price (USD)</span>
-        <span class="tr">Volume (BTC)</span>
-        <span class="tr">Orders</span>
-      </div>
-      <div id="asks-wrap"></div>
+    <div class="form-scroll">
 
-      <div class="spread-row" id="spread-row">
-        <span class="sp" id="spread-val">—</span>
-        <span class="mid" id="mid-val">—</span>
+      <!-- Market price reference -->
+      <div class="market-price-bar">
+        <div>
+          <div class="mpb-label">Current Market Price
+            <span class="ti"
+              data-tip-title="Market Price"
+              data-tip="The midpoint between the best ask (lowest sell offer) and best bid (highest buy offer). A Market order will fill at prices near this level.">ⓘ</span>
+          </div>
+          <div class="mpb-price" id="form-mid-price">—</div>
+          <div class="mpb-sub" id="form-spread-hint">place an order to get started</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:10px;color:var(--tx3);margin-bottom:2px">Best Ask</div>
+          <div style="font-size:12px;color:var(--sell);font-variant-numeric:tabular-nums" id="form-ask">—</div>
+          <div style="font-size:10px;color:var(--tx3);margin-top:6px;margin-bottom:2px">Best Bid</div>
+          <div style="font-size:12px;color:var(--buy);font-variant-numeric:tabular-nums" id="form-bid">—</div>
+        </div>
       </div>
 
-      <div id="bids-wrap"></div>
-      <div class="book-side-label bid" style="margin-top:4px">↑ BUYERS (willing to pay this price or less)</div>
+      <!-- Portfolio / Balance -->
+      <div class="portfolio-card" id="portfolio-card">
+        <div class="portfolio-header">
+          <div class="portfolio-label">
+            Your Balance
+            <span class="ti"
+              data-tip-title="Your Balance"
+              data-tip="Everyone starts with $100,000 USD and 2 BTC. Your balance updates automatically every time one of your orders gets filled. The portfolio value is USD + BTC × current market price.">ⓘ</span>
+          </div>
+          <div class="portfolio-value">
+            Portfolio: <strong id="portfolio-total">—</strong>
+            <span id="portfolio-pnl" class="pnl-neutral"></span>
+          </div>
+        </div>
+        <div class="balance-row">
+          <div class="balance-cell" id="bal-usd-cell">
+            <div class="balance-cell-label">
+              <span class="bal-currency">USD</span>
+              Available cash
+            </div>
+            <div class="balance-amount usd" id="bal-usd">$100,000.00</div>
+            <div class="balance-sub" id="bal-usd-change"></div>
+          </div>
+          <div class="balance-divider"></div>
+          <div class="balance-cell" id="bal-btc-cell">
+            <div class="balance-cell-label">
+              <span class="bal-currency">BTC</span>
+              Bitcoin held
+            </div>
+            <div class="balance-amount btc" id="bal-btc">2.0000</div>
+            <div class="balance-sub" id="bal-btc-change"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Buy / Sell -->
+      <div class="side-seg">
+        <button class="side-btn active-buy" id="btn-buy"  onclick="setSide('buy')">Buy BTC</button>
+        <button class="side-btn"            id="btn-sell" onclick="setSide('sell')">Sell BTC</button>
+      </div>
+
+      <!-- Amount + Price (always visible) -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
+        <div class="fg" style="margin-bottom:0">
+          <div class="fl">Amount (BTC)</div>
+          <div class="input-wrap">
+            <input type="number" id="order-qty" placeholder="0.0000" min="0" step="0.0001" oninput="calcApprox()">
+            <span class="input-unit">BTC</span>
+          </div>
+        </div>
+        <div class="fg" style="margin-bottom:0" id="price-group">
+          <div class="fl" id="price-label">
+            My Price (USD)
+            <span class="ti"
+              data-tip-title="Limit Price"
+              data-tip="Your order will only execute at this price or better. If no one is willing to match right now, your order rests in the book and waits. Pre-filled with the best available price.">ⓘ</span>
+          </div>
+          <div class="input-wrap">
+            <input type="number" id="order-price" placeholder="0.00" min="0" step="0.01" oninput="onPriceInput()">
+            <span class="input-unit">USD</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Price hint — explains auto-fill and what will happen -->
+      <div id="price-hint" style="font-size:11px;color:var(--tx2);margin-bottom:8px;min-height:14px;line-height:1.5"></div>
+
+      <!-- Approx value -->
+      <div class="approx-row" id="approx-row">Enter an amount to see estimated cost</div>
+
+      <!-- Advanced options toggle -->
+      <div class="adv-toggle" onclick="toggleAdvanced()">
+        <span class="adv-arrow" id="adv-arrow">▶</span>
+        Advanced order types (IOC, FOK)
+        <span class="ti"
+          data-tip-title="Advanced Order Types"
+          data-tip="IOC (Immediate-or-Cancel): fills what's available now at your price, cancels the rest.&#10;FOK (Fill-or-Kill): must fill your entire quantity instantly, or the whole order is rejected.&#10;These are for experienced traders.">ⓘ</span>
+      </div>
+
+      <div class="adv-section" id="adv-section">
+        <div class="adv-inner">
+          <div class="fg">
+            <div class="fl">Order Type</div>
+            <div class="sel-wrap">
+              <select id="order-type" onchange="onTypeChange()">
+                <option value="LIMIT">Limit — wait for my price</option>
+                <option value="IOC">IOC — fill now or cancel rest</option>
+                <option value="FOK">FOK — fill ALL or cancel entirely</option>
+              </select>
+              <span class="sel-arrow">▾</span>
+            </div>
+          </div>
+          <div class="type-hint" id="type-hint"></div>
+        </div>
+      </div>
+
+      <div class="form-msg" id="form-msg"></div>
+      <button class="submit-btn buy" id="submit-btn" onclick="submitOrder()">Buy BTC-USD</button>
     </div>
   </div>
 
-  <!-- ── Center ───────────────────────────────────────────────────────────── -->
+  <!-- ── CENTER: Order Book | Recent Trades ─────────────────────────────────── -->
   <div class="panel">
-    <div class="tab-bar">
-      <div class="tab active" id="tab-place"    onclick="switchTab('place')">Place Order</div>
-      <div class="tab"        id="tab-myorders" onclick="switchTab('myorders')">My Orders <span id="my-count" style="opacity:.5"></span></div>
-    </div>
+    <div class="center-split">
 
-    <!-- Place Order tab -->
-    <div class="tc active" id="tc-place">
-      <div class="form-section">
-
-        <!-- Market price reference -->
-        <div class="market-price-bar">
-          <div>
-            <div class="mpb-label">Current Market Price
-              <span class="ti"
-                data-tip-title="Market Price"
-                data-tip="The midpoint between the best ask (lowest sell offer) and best bid (highest buy offer). A Market order will fill at prices near this level.">ⓘ</span>
-            </div>
-            <div class="mpb-price" id="form-mid-price">—</div>
-            <div class="mpb-sub" id="form-spread-hint">place an order to get started</div>
-          </div>
-          <div style="text-align:right">
-            <div style="font-size:10px;color:var(--tx3);margin-bottom:2px">Best Ask</div>
-            <div style="font-size:12px;color:var(--sell);font-variant-numeric:tabular-nums" id="form-ask">—</div>
-            <div style="font-size:10px;color:var(--tx3);margin-top:6px;margin-bottom:2px">Best Bid</div>
-            <div style="font-size:12px;color:var(--buy);font-variant-numeric:tabular-nums" id="form-bid">—</div>
-          </div>
-        </div>
-
-        <!-- Portfolio / Balance -->
-        <div class="portfolio-card" id="portfolio-card">
-          <div class="portfolio-header">
-            <div class="portfolio-label">
-              Your Balance
-              <span class="ti"
-                data-tip-title="Your Balance"
-                data-tip="Everyone starts with $10,000 USD and 1 BTC. Your balance updates automatically every time one of your orders gets filled. The portfolio value is USD + BTC × current market price.">ⓘ</span>
-            </div>
-            <div class="portfolio-value">
-              Portfolio: <strong id="portfolio-total">—</strong>
-              <span id="portfolio-pnl" class="pnl-neutral"></span>
-            </div>
-          </div>
-          <div class="balance-row">
-            <div class="balance-cell" id="bal-usd-cell">
-              <div class="balance-cell-label">
-                <span class="bal-currency">USD</span>
-                Available cash
-              </div>
-              <div class="balance-amount usd" id="bal-usd">$100,000.00</div>
-              <div class="balance-sub" id="bal-usd-change"></div>
-            </div>
-            <div class="balance-divider"></div>
-            <div class="balance-cell" id="bal-btc-cell">
-              <div class="balance-cell-label">
-                <span class="bal-currency">BTC</span>
-                Bitcoin held
-              </div>
-              <div class="balance-amount btc" id="bal-btc">2.0000</div>
-              <div class="balance-sub" id="bal-btc-change"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Buy / Sell -->
-        <div class="side-seg">
-          <button class="side-btn active-buy" id="btn-buy"  onclick="setSide('buy')">
-            🟢 Buy BTC
-          </button>
-          <button class="side-btn"            id="btn-sell" onclick="setSide('sell')">
-            🔴 Sell BTC
-          </button>
-        </div>
-
-        <!-- Amount + Price (always visible) -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
-          <div class="fg" style="margin-bottom:0">
-            <div class="fl">Amount (BTC)</div>
-            <div class="input-wrap">
-              <input type="number" id="order-qty" placeholder="0.0000" min="0" step="0.0001" oninput="calcApprox()">
-              <span class="input-unit">BTC</span>
-            </div>
-          </div>
-          <div class="fg" style="margin-bottom:0" id="price-group">
-            <div class="fl" id="price-label">
-              My Price (USD)
-              <span class="ti"
-                data-tip-title="Limit Price"
-                data-tip="Your order will only execute at this price or better. If no one is willing to match right now, your order rests in the book and waits. Pre-filled with the best available price.">ⓘ</span>
-            </div>
-            <div class="input-wrap">
-              <input type="number" id="order-price" placeholder="0.00" min="0" step="0.01" oninput="onPriceInput()">
-              <span class="input-unit">USD</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Price hint — explains auto-fill and what will happen -->
-        <div id="price-hint" style="font-size:11px;color:var(--tx2);margin-bottom:8px;min-height:14px;line-height:1.5"></div>
-
-        <!-- Approx value -->
-        <div class="approx-row" id="approx-row">Enter an amount to see estimated cost</div>
-
-        <!-- Advanced options toggle -->
-        <div class="adv-toggle" onclick="toggleAdvanced()">
-          <span class="adv-arrow" id="adv-arrow">▶</span>
-          Advanced order types (IOC, FOK)
+      <div class="center-col">
+        <div class="ph">
+          Order Book
           <span class="ti"
-            data-tip-title="Advanced Order Types"
-            data-tip="IOC (Immediate-or-Cancel): fills what's available now at your price, cancels the rest.&#10;FOK (Fill-or-Kill): must fill your entire quantity instantly, or the whole order is rejected.&#10;These are for experienced traders.">ⓘ</span>
+            data-tip-title="Order Book"
+            data-tip="Shows all resting orders grouped by price. Sellers above the spread, buyers below. The wider the bar, the more volume at that level. When a buyer and seller agree on price, a trade executes instantly.">ⓘ</span>
         </div>
-
-        <div class="adv-section" id="adv-section">
-          <div class="adv-inner">
-            <div class="fg">
-              <div class="fl">Order Type</div>
-              <div class="sel-wrap">
-                <select id="order-type" onchange="onTypeChange()">
-                  <option value="LIMIT">Limit — wait for my price</option>
-                  <option value="IOC">IOC — fill now or cancel rest</option>
-                  <option value="FOK">FOK — fill ALL or cancel entirely</option>
-                </select>
-                <span class="sel-arrow">▾</span>
-              </div>
-            </div>
-            <div class="type-hint" id="type-hint"></div>
+        <div class="book-scroll" id="book-scroll">
+          <div class="book-side-label ask">↓ SELLERS (asking this price or higher)</div>
+          <div class="book-col-hdr">
+            <span>Price (USD)</span>
+            <span class="tr">Volume (BTC)</span>
+            <span class="tr">Orders</span>
           </div>
-        </div>
+          <div id="asks-wrap"></div>
 
-        <div class="form-msg" id="form-msg"></div>
-        <button class="submit-btn buy" id="submit-btn" onclick="submitOrder()">Buy BTC-USD</button>
+          <div class="spread-row" id="spread-row">
+            <span class="sp" id="spread-val">—</span>
+            <span class="mid" id="mid-val">—</span>
+          </div>
+
+          <div id="bids-wrap"></div>
+          <div class="book-side-label bid" style="margin-top:4px">↑ BUYERS (willing to pay this price or less)</div>
+        </div>
       </div>
 
-      <!-- Recent Trades -->
-      <div class="trades-sec">
-        <div class="ph" style="background:transparent; padding-left:14px">
+      <div class="center-col">
+        <div class="ph">
           Recent Trades
           <span class="ti"
             data-tip-title="Maker &amp; Taker"
@@ -1084,38 +1191,47 @@ select:focus { border-color: var(--gold); }
         </div>
         <div class="scroll-list" id="trades-list"></div>
       </div>
-    </div>
 
-    <!-- My Orders tab -->
-    <div class="tc" id="tc-myorders">
-      <div class="orders-wrap">
-        <table class="orders-table">
-          <thead>
-            <tr>
-              <th>Order ID</th><th>Side</th><th>Type</th>
-              <th>Price</th><th>Qty</th><th>Status</th><th></th>
-            </tr>
-          </thead>
-          <tbody id="my-orders-body">
-            <tr><td colspan="7" class="empty-cell">No orders yet — place one to get started!</td></tr>
-          </tbody>
-        </table>
-      </div>
     </div>
   </div>
 
-  <!-- ── Activity Feed ──────────────────────────────────────────────────────── -->
+  <!-- ── RIGHT: Activity Feed ───────────────────────────────────────────────── -->
   <div class="panel">
     <div class="ph">
       Activity Feed
       <span class="ti"
         data-tip-title="Activity Feed"
-        data-tip="Live stream of every event in the matching engine. Your own events are highlighted in blue. A 'seq' number guarantees strict ordering — every event gets a unique, incrementing ID.">ⓘ</span>
+        data-tip="Live stream of every event in the matching engine. Your own events are highlighted. A 'seq' number guarantees strict ordering — every event gets a unique, incrementing ID.">ⓘ</span>
     </div>
     <div class="feed-scroll" id="feed-scroll"></div>
   </div>
 
 </div>
+
+<!-- ── BOTTOM: My Orders ─────────────────────────────────────────────────────── -->
+<div class="bottom-panel">
+  <div class="ph">
+    My Orders <span id="my-count" style="opacity:.6"></span>
+    <span class="ti"
+      data-tip-title="My Orders"
+      data-tip="Every order you've placed this session, newest first. Open and partially filled orders can be cancelled.">ⓘ</span>
+  </div>
+  <div class="orders-wrap">
+    <table class="orders-table">
+      <thead>
+        <tr>
+          <th>Order ID</th><th>Side</th><th>Type</th>
+          <th>Price</th><th>Qty</th><th>Status</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="my-orders-body">
+        <tr><td colspan="7" class="empty-cell">No orders yet — place one to get started!</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</div>
+
 
 <!-- ── Status bar ──────────────────────────────────────────────────────────── -->
 <div class="sbar">
@@ -1134,7 +1250,7 @@ select:focus { border-color: var(--gold); }
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
 let username    = '';
-let userColor   = '#c9a351';
+let userColor   = '#26a69a';
 let currentSide = 'buy';
 let isAdvanced  = false;
 let bookSnap    = { bids: [], asks: [] };
@@ -1143,7 +1259,23 @@ let lastPrice   = null;
 let myOrderIds  = new Set();   // IDs of orders submitted in this session
 let myOrders    = [];
 
-const COLORS = ['#4d8cf5','#c9a351','#3aaa90','#e05858','#d4943a','#a855f7','#ec4899','#14b8a6'];
+const COLORS = ['#26a69a','#089981','#3cbfb2','#4db6ac','#00897b','#5c9ead','#607d8b','#78909c'];
+
+// ── Theme ─────────────────────────────────────────────────────────────────────
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  const btn = document.getElementById('theme-btn');
+  if (btn) btn.textContent = t === 'dark' ? '☀️' : '🌙';
+  localStorage.setItem('theme', t);
+}
+
+function toggleTheme() {
+  applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+}
+
+function initTheme() {
+  applyTheme(localStorage.getItem('theme') || 'dark');
+}
 
 const TYPE_HINTS = {
   LIMIT: 'Your order rests in the book at your exact price and waits until a counterparty matches. You choose the price, but not the timing.',
@@ -1234,15 +1366,6 @@ function shareLink() {
   }).catch(() => {
     prompt('Copy this link and share it:', url);
   });
-}
-
-// ── Tabs ──────────────────────────────────────────────────────────────────────
-function switchTab(name) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.tc').forEach(t => t.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
-  document.getElementById('tc-'  + name).classList.add('active');
-  if (name === 'myorders') loadMyOrders();
 }
 
 // ── Price pre-fill ────────────────────────────────────────────────────────────
@@ -1786,15 +1909,18 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+initTheme();
 initUser();
 initTooltips();
 onTypeChange();
 highlightActiveBalance();
 refreshBook();
 loadBalance();
+loadMyOrders();
 setInterval(refreshBook,  3000);
 setInterval(pollPresence, 6000);
 setInterval(loadBalance,  10000); // periodic sync in case of missed events
+setInterval(loadMyOrders, 5000);  // keep the bottom orders panel fresh
 connectSSE();
 </script>
 </body>
