@@ -77,6 +77,8 @@ type BookSnapshot struct {
 	Symbol string               `json:"symbol"`
 	Bids   []PriceLevelSnapshot `json:"bids"`
 	Asks   []PriceLevelSnapshot `json:"asks"`
+	// AMM is set in AMM mode: pool reserves and spot price.
+	AMM *AMMInfo `json:"amm,omitempty"`
 }
 
 type PriceLevelSnapshot struct {

@@ -42,6 +42,10 @@
   --sell-bg:  rgba(239,83,80,.08);
   --sell-bd:  rgba(239,83,80,.3);
 
+  /* update flashes */
+  --buy-flash:  rgba(38,166,154,.22);
+  --sell-flash: rgba(239,83,80,.22);
+
   /* statuses */
   --filled:     #26a69a;
   --filled-bg:  rgba(38,166,154,.12);
@@ -92,6 +96,9 @@ html[data-theme="light"] {
   --sell-s:   #c93338;
   --sell-bg:  rgba(229,72,77,.06);
   --sell-bd:  rgba(229,72,77,.3);
+
+  --buy-flash:  rgba(8,153,129,.18);
+  --sell-flash: rgba(229,72,77,.16);
 
   --filled:     #089981;
   --filled-bg:  rgba(8,153,129,.1);
@@ -775,6 +782,38 @@ select:focus { border-color: var(--gold); }
 
 .cxl-btn:hover { border-color: var(--sell); color: var(--sell); }
 
+.reject-reason {
+  font-size: 10px;
+  color: var(--sell);
+  margin-top: 3px;
+  max-width: 360px;
+  white-space: normal;
+  line-height: 1.4;
+}
+
+/* ── AMM pool info strip ───────────────────────────────────────────────────── */
+.pool-info {
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 14px;
+  background: var(--gold-bg);
+  border-bottom: 1px solid var(--bd1);
+  font-size: 11px; color: var(--tx2);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.pool-chip {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--gold);
+  color: #fff;
+  font-size: 9px; font-weight: 700; letter-spacing: .6px;
+}
+
+/* executed value column: red when paying USD, green when receiving */
+.cost-pay  { color: var(--sell); font-weight: 600; }
+.cost-recv { color: var(--buy);  font-weight: 600; }
+
 /* ── Activity Feed ─────────────────────────────────────────────────────────── */
 .feed-scroll { flex: 1; overflow-y: auto; }
 
@@ -929,6 +968,83 @@ select:focus { border-color: var(--gold); }
 }
 
 .bal-flash { animation: balFlash .4s ease-out; }
+
+/* ── Micro-animations ──────────────────────────────────────────────────────── */
+
+/* depth bars glide as volume changes (rows are diff-updated, not re-created) */
+.depth-bar { transition: width .45s cubic-bezier(.22,1,.36,1); }
+
+/* book row flashes when the volume at a level changes */
+@keyframes rowFlashUp   { 0% { background: var(--buy-flash); }  100% { background: transparent; } }
+@keyframes rowFlashDown { 0% { background: var(--sell-flash); } 100% { background: transparent; } }
+.book-row.flash-up   { animation: rowFlashUp   .7s ease-out; }
+.book-row.flash-down { animation: rowFlashDown .7s ease-out; }
+
+/* newly appeared book level slides in */
+@keyframes rowNew {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+.book-row.row-new { animation: rowNew .25s ease-out; }
+
+/* trade rows slide in with a directional tint that fades */
+@keyframes tradeInUp {
+  0%   { opacity: 0; transform: translateY(-4px); background: var(--buy-flash); }
+  40%  { opacity: 1; transform: none; }
+  100% { background: transparent; }
+}
+@keyframes tradeInDown {
+  0%   { opacity: 0; transform: translateY(-4px); background: var(--sell-flash); }
+  40%  { opacity: 1; transform: none; }
+  100% { background: transparent; }
+}
+.trade-row.up-row   { animation: tradeInUp   .8s ease-out; }
+.trade-row.down-row { animation: tradeInDown .8s ease-out; }
+
+/* welcome card entrance */
+@keyframes popIn {
+  from { opacity: 0; transform: scale(.96) translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.welcome-card { animation: popIn .35s cubic-bezier(.22,1,.36,1); }
+
+/* submit button success pulse */
+@keyframes btnPulse {
+  0%   { box-shadow: 0 0 0 0 var(--gold-bd); }
+  100% { box-shadow: 0 0 0 14px transparent; }
+}
+.submit-btn.pulse { animation: btnPulse .55s ease-out; }
+
+/* spread / mid price tick */
+@keyframes midTick {
+  0%   { color: var(--gold-h); transform: scale(1.04); }
+  100% { color: var(--gold);   transform: none; }
+}
+.mid.tick { animation: midTick .4s ease-out; display: inline-block; }
+
+/* interactive lift on cards & buttons */
+.side-btn, .submit-btn, .cxl-btn, .welcome-btn { will-change: transform; }
+.side-btn:hover:not(.active-buy):not(.active-sell) { color: var(--tx1); }
+.cxl-btn:active { transform: scale(.95); }
+
+/* feed rows for my events get a brief attention pulse */
+@keyframes minePulse {
+  0%   { background: var(--buy-flash); }
+  100% { background: var(--buy-bg); }
+}
+.ev.mine-trade { animation: fadeIn .2s ease-out, minePulse 1s ease-out; }
+
+/* toast leaves to the right */
+.toast.out { opacity: 0; transform: translateX(16px); transition: opacity .3s, transform .3s; }
+
+/* respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
   </style>
 </head>
 <body>
@@ -1160,6 +1276,13 @@ select:focus { border-color: var(--gold); }
             data-tip-title="Order Book"
             data-tip="Shows all resting orders grouped by price. Sellers above the spread, buyers below. The wider the bar, the more volume at that level. When a buyer and seller agree on price, a trade executes instantly.">ⓘ</span>
         </div>
+        <div class="pool-info" id="pool-info" style="display:none">
+          <span class="pool-chip">AMM</span>
+          <span id="pool-stats">—</span>
+          <span class="ti"
+            data-tip-title="AMM Liquidity Pool"
+            data-tip="In AMM mode there is no counterparty book — trades execute against a constant-product liquidity pool (x·y=k, like Uniswap). The depth shown below is synthesized from the pool curve; the price moves along the curve as you trade.">ⓘ</span>
+        </div>
         <div class="book-scroll" id="book-scroll">
           <div class="book-side-label ask">↓ SELLERS (asking this price or higher)</div>
           <div class="book-col-hdr">
@@ -1221,11 +1344,12 @@ select:focus { border-color: var(--gold); }
       <thead>
         <tr>
           <th>Order ID</th><th>Side</th><th>Type</th>
-          <th>Price</th><th>Qty</th><th>Status</th><th></th>
+          <th>Price</th><th>Qty</th><th>Filled</th>
+          <th>Avg Price</th><th>Total (USD)</th><th>Status</th><th></th>
         </tr>
       </thead>
       <tbody id="my-orders-body">
-        <tr><td colspan="7" class="empty-cell">No orders yet — place one to get started!</td></tr>
+        <tr><td colspan="10" class="empty-cell">No orders yet — place one to get started!</td></tr>
       </tbody>
     </table>
   </div>
@@ -1522,6 +1646,22 @@ async function loadBalance() {
   } catch (_) {}
 }
 
+// Tween a numeric display from one value to another (easeOutCubic).
+function tweenNumber(el, from, to, fmtFn, ms = 500) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || from === undefined) {
+    el.textContent = fmtFn(to);
+    return;
+  }
+  const t0 = performance.now();
+  function step(t) {
+    const k = Math.min((t - t0) / ms, 1);
+    const e = 1 - Math.pow(1 - k, 3);
+    el.textContent = fmtFn(from + (to - from) * e);
+    if (k < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
 function updateBalanceDisplay(newUSD, newBTC, animate) {
   const usdChanged = Math.abs(newUSD - balUSD) > 0.001;
   const btcChanged = Math.abs(newBTC - balBTC) > 0.001;
@@ -1530,8 +1670,12 @@ function updateBalanceDisplay(newUSD, newBTC, animate) {
     const diff = newUSD - balUSD;
     const el   = document.getElementById('bal-usd');
     const chg  = document.getElementById('bal-usd-change');
-    el.textContent = '$' + fmt(newUSD);
-    if (animate) { el.classList.remove('bal-flash'); void el.offsetWidth; el.classList.add('bal-flash'); }
+    if (animate) {
+      tweenNumber(el, balUSD, newUSD, v => '$' + fmt(v));
+      el.classList.remove('bal-flash'); void el.offsetWidth; el.classList.add('bal-flash');
+    } else {
+      el.textContent = '$' + fmt(newUSD);
+    }
     if (Math.abs(diff) > 0.001) {
       const sign = diff > 0 ? '+' : '';
       chg.textContent  = `${sign}$${fmt(Math.abs(diff))} from last trade`;
@@ -1545,8 +1689,12 @@ function updateBalanceDisplay(newUSD, newBTC, animate) {
     const diff = newBTC - balBTC;
     const el   = document.getElementById('bal-btc');
     const chg  = document.getElementById('bal-btc-change');
-    el.textContent = newBTC.toFixed(4);
-    if (animate) { el.classList.remove('bal-flash'); void el.offsetWidth; el.classList.add('bal-flash'); }
+    if (animate) {
+      tweenNumber(el, balBTC, newBTC, v => v.toFixed(4));
+      el.classList.remove('bal-flash'); void el.offsetWidth; el.classList.add('bal-flash');
+    } else {
+      el.textContent = newBTC.toFixed(4);
+    }
     if (Math.abs(diff) > 0.00001) {
       const sign = diff > 0 ? '+' : '';
       chg.textContent  = `${sign}${diff.toFixed(4)} BTC from last trade`;
@@ -1610,6 +1758,8 @@ async function submitOrder() {
     } else {
       myOrderIds.add(data.order_id);
       priceTouched = false; // allow price to re-sync with book on next refresh
+      const btn = document.getElementById('submit-btn');
+      btn.classList.remove('pulse'); void btn.offsetWidth; btn.classList.add('pulse');
       msgEl.className   = 'form-msg ok';
       msgEl.textContent = data.status === 'FILLED'
         ? '⚡ Order matched and filled immediately!'
@@ -1631,10 +1781,17 @@ async function cancelOrder(id) {
 }
 
 // ── My Orders ─────────────────────────────────────────────────────────────────
+let myOrdersSnapshot = '';
+
 async function loadMyOrders() {
   try {
-    const res = await fetch('/api/me/orders');
-    myOrders  = (await res.json()) || [];
+    const res  = await fetch('/api/me/orders');
+    const data = (await res.json()) || [];
+    // Skip the re-render (and its row animations) when nothing changed.
+    const snap = JSON.stringify(data);
+    if (snap === myOrdersSnapshot) return;
+    myOrdersSnapshot = snap;
+    myOrders = data;
     // Merge known IDs
     myOrders.forEach(o => myOrderIds.add(o.id));
     renderMyOrders();
@@ -1646,28 +1803,53 @@ async function loadMyOrders() {
 function renderMyOrders() {
   const tb = document.getElementById('my-orders-body');
   if (!myOrders.length) {
-    tb.innerHTML = '<tr><td colspan="7" class="empty-cell">No orders yet — place one to get started!</td></tr>';
+    tb.innerHTML = '<tr><td colspan="10" class="empty-cell">No orders yet — place one to get started!</td></tr>';
     return;
   }
   tb.innerHTML = myOrders.map(o => {
     const sc  = o.status.toLowerCase();
     const can = o.status === 'OPEN' || o.status === 'PARTIAL';
     const prc = (!o.price || o.price === '0') ? '—' : '$' + fmt(parseFloat(o.price));
+    const why = o.reason ? esc(o.reason) : '';
+    const statusCell = why
+      ? `<span class="bdg ${sc}" title="${why}">${o.status}</span><div class="reject-reason">${why}</div>`
+      : `<span class="bdg ${sc}">${o.status}</span>`;
+
+    // What was actually executed: filled qty, average fill price, total paid/received.
+    const filled = parseFloat(o.filled_qty || 0);
+    const cost   = parseFloat(o.total_cost || 0);
+    const filledCell = filled > 0
+      ? `${filled.toFixed(4)}`
+      : '<span style="color:var(--tx3)">—</span>';
+    const avgCell = filled > 0
+      ? '$' + fmt(cost / filled)
+      : '<span style="color:var(--tx3)">—</span>';
+    const costCell = filled > 0
+      ? `<span class="${o.side === 'buy' ? 'cost-pay' : 'cost-recv'}">${o.side === 'buy' ? '−' : '+'}$${fmt(cost)}</span>`
+      : '<span style="color:var(--tx3)">—</span>';
+
     return `<tr>
       <td><span class="id-mono">${o.id.slice(0,8)}…</span></td>
       <td><span class="bdg ${o.side}">${o.side.toUpperCase()}</span></td>
       <td>${o.type}</td>
       <td>${prc}</td>
       <td>${parseFloat(o.qty).toFixed(4)}</td>
-      <td><span class="bdg ${sc}">${o.status}</span></td>
+      <td>${filledCell}</td>
+      <td>${avgCell}</td>
+      <td>${costCell}</td>
+      <td>${statusCell}</td>
       <td>${can ? `<button class="cxl-btn" onclick="cancelOrder('${o.id}')">Cancel</button>` : ''}</td>
     </tr>`;
   }).join('');
 }
 
-function updateMyOrderStatus(orderID, status) {
+function updateMyOrderStatus(orderID, status, reason) {
   const o = myOrders.find(x => x.id === orderID);
-  if (o) { o.status = status; renderMyOrders(); }
+  if (o) {
+    o.status = status;
+    if (reason) o.reason = reason;
+    renderMyOrders();
+  }
 }
 
 // ── Order Book ────────────────────────────────────────────────────────────────
@@ -1680,16 +1862,26 @@ async function refreshBook() {
   } catch (_) {}
 }
 
+let lastMid = null;
+
 function renderBook(snap) {
+  // AMM mode: show pool reserves above the (synthesized) book
+  const poolEl = document.getElementById('pool-info');
+  if (snap.amm) {
+    poolEl.style.display = '';
+    document.getElementById('pool-stats').textContent =
+      `${parseFloat(snap.amm.base_reserve).toFixed(4)} BTC · $${fmt(parseFloat(snap.amm.quote_reserve))} · fee ${(snap.amm.fee_bps / 100).toFixed(2)}%`;
+  } else {
+    poolEl.style.display = 'none';
+  }
+
   const asks   = (snap.asks || []).slice(0, 12);
   const bids   = (snap.bids || []).slice(0, 12);
   const allQty = [...asks, ...bids].map(l => parseFloat(l.qty));
   const maxQty = allQty.length ? Math.max(...allQty) : 1;
 
-  document.getElementById('asks-wrap').innerHTML =
-    asks.slice().reverse().map(l => bookRowHTML(l, 'ask', maxQty)).join('');
-  document.getElementById('bids-wrap').innerHTML =
-    bids.map(l => bookRowHTML(l, 'bid', maxQty)).join('');
+  updateBookSide('asks-wrap', asks.slice().reverse(), 'ask', maxQty);
+  updateBookSide('bids-wrap', bids, 'bid', maxQty);
 
   if (asks.length && bids.length) {
     const ba  = parseFloat(asks[0].price);
@@ -1702,6 +1894,12 @@ function renderBook(snap) {
     document.getElementById('form-ask').textContent = '$' + fmt(ba);
     document.getElementById('form-bid').textContent = '$' + fmt(bb);
     document.getElementById('form-spread-hint').textContent = `Spread: $${sp} · ${asks.length} ask level${asks.length!==1?'s':''}, ${bids.length} bid level${bids.length!==1?'s':''}`;
+    // tick animation when the mid price moves
+    if (lastMid !== null && Math.abs(mid - lastMid) > 0.001) {
+      const midEl = document.getElementById('mid-val');
+      midEl.classList.remove('tick'); void midEl.offsetWidth; midEl.classList.add('tick');
+    }
+    lastMid = mid;
   } else {
     document.getElementById('spread-val').textContent    = 'Spread —';
     document.getElementById('mid-val').textContent       = 'Mid —';
@@ -1709,19 +1907,50 @@ function renderBook(snap) {
     document.getElementById('form-ask').textContent = '—';
     document.getElementById('form-bid').textContent = '—';
     document.getElementById('form-spread-hint').textContent = 'place an order to get started';
+    lastMid = null;
   }
 }
 
-function bookRowHTML(level, cls, maxQty) {
-  const price = fmt(parseFloat(level.price));
-  const qty   = parseFloat(level.qty).toFixed(4);
-  const pct   = Math.min(parseFloat(level.qty) / maxQty * 100, 100).toFixed(1);
-  return `<div class="book-row ${cls}">
-    <span>${price}</span>
-    <span class="tr">${qty}</span>
-    <span class="tr" style="color:var(--tx2)">${level.count}</span>
-    <div class="depth-bar" style="width:${pct}%"></div>
-  </div>`;
+// Diff-update one side of the book so DOM nodes persist between refreshes:
+// depth bars animate their width, changed rows flash, new rows slide in.
+function updateBookSide(wrapId, levels, cls, maxQty) {
+  const wrap = document.getElementById(wrapId);
+  const existing = new Map();
+  wrap.querySelectorAll('.book-row').forEach(r => existing.set(r.dataset.price, r));
+  const seen = new Set();
+
+  levels.forEach((l, i) => {
+    seen.add(l.price);
+    const qty = parseFloat(l.qty);
+    const pct = Math.min(qty / maxQty * 100, 100).toFixed(1);
+    let row = existing.get(l.price);
+
+    if (!row) {
+      row = document.createElement('div');
+      row.className = `book-row ${cls} row-new`;
+      row.dataset.price = l.price;
+      row.innerHTML = `<span>${fmt(parseFloat(l.price))}</span>
+        <span class="tr bq"></span>
+        <span class="tr bc" style="color:var(--tx2)"></span>
+        <div class="depth-bar"></div>`;
+    } else if (row.dataset.qty !== l.qty) {
+      const up = qty > parseFloat(row.dataset.qty || '0');
+      row.classList.remove('flash-up', 'flash-down', 'row-new');
+      void row.offsetWidth;
+      row.classList.add(up ? 'flash-up' : 'flash-down');
+    }
+
+    row.dataset.qty = l.qty;
+    row.querySelector('.bq').textContent = qty.toFixed(4);
+    row.querySelector('.bc').textContent = l.count;
+    row.querySelector('.depth-bar').style.width = pct + '%';
+
+    // keep rows in price order without rebuilding the list
+    const ref = wrap.children[i];
+    if (ref !== row) wrap.insertBefore(row, ref || null);
+  });
+
+  existing.forEach((row, price) => { if (!seen.has(price)) row.remove(); });
 }
 
 // ── Presence ──────────────────────────────────────────────────────────────────
@@ -1765,7 +1994,7 @@ function onEvent(ev) {
 
   // Update my order status
   const statusMap = { 'order.filled': 'FILLED', 'order.partially_filled': 'PARTIAL', 'order.cancelled': 'CANCELLED', 'order.rejected': 'REJECTED' };
-  if (statusMap[ev.type] && ev.order_id) updateMyOrderStatus(ev.order_id, statusMap[ev.type]);
+  if (statusMap[ev.type] && ev.order_id) updateMyOrderStatus(ev.order_id, statusMap[ev.type], ev.reason);
 
   if (ev.type === 'trade') {
     tradeCount++;
@@ -1773,9 +2002,9 @@ function onEvent(ev) {
     updateLastPrice(parseFloat(ev.price));
     addTradeRow(ev);
     refreshBook();
-    // Refresh balance if this trade involved the current user
+    // Refresh balance and order totals if this trade involved the current user
     const isMineForBalance = myOrderIds.has(ev.maker_id) || myOrderIds.has(ev.taker_id);
-    if (isMineForBalance) loadBalance();
+    if (isMineForBalance) { loadBalance(); loadMyOrders(); }
   }
 
   // Toast for my important events
@@ -1791,7 +2020,8 @@ function onEvent(ev) {
     } else if (ev.type === 'order.partially_filled') {
       showToast(`<strong>Partial fill</strong>${q.toFixed(4)} BTC at $${fmt(p)} — order still resting`, 't-info', 3500);
     } else if (ev.type === 'order.rejected') {
-      showToast('<strong>Order rejected</strong>Not enough liquidity to fill your FOK order completely.', 't-error', 4000);
+      const why = ev.reason || 'The engine could not accept this order.';
+      showToast(`<strong>Order rejected</strong>${esc(why)}`, 't-error', 5000);
     }
   }
 
@@ -1822,7 +2052,7 @@ function addTradeRow(ev) {
   const time  = new Date(ev.timestamp).toLocaleTimeString('en-US', { hour12: false });
   const dir   = (lastPrice === null || price >= lastPrice) ? 'up' : 'down';
   const row   = document.createElement('div');
-  row.className = 'trade-row';
+  row.className = `trade-row ${dir}-row`;
   row.innerHTML = `<span class="tp ${dir}">${fmt(price)}</span>
     <span class="tq tr">${qty.toFixed(4)}</span>
     <span class="tt tr">${time}</span>`;
@@ -1850,7 +2080,7 @@ function humanize(ev, isMine) {
       case 'order.filled':           return `Your order was completely filled${p ? ` at $${fmt(p)}` : ''}`;
       case 'order.partially_filled': return `Partial fill — ${q.toFixed(4)} BTC at $${fmt(p)}`;
       case 'order.cancelled':        return `Your order was cancelled (${q.toFixed(4)} BTC unfilled)`;
-      case 'order.rejected':         return 'Your FOK order was rejected — not enough liquidity';
+      case 'order.rejected':         return ev.reason ? `Your order was rejected — ${esc(ev.reason)}` : 'Your order was rejected';
       case 'trade':                  return `⚡ Trade: ${q.toFixed(4)} BTC at $${fmt(p)}`;
     }
   }
@@ -1861,7 +2091,7 @@ function humanize(ev, isMine) {
     case 'order.partially_filled': return `Partial fill — ${q.toFixed(4)} BTC at $${fmt(p)}`;
     case 'order.accepted':         return `New ${side} order added to book`;
     case 'order.cancelled':        return `Order cancelled`;
-    case 'order.rejected':         return `FOK order rejected`;
+    case 'order.rejected':         return ev.reason ? `Order rejected — ${esc(ev.reason)}` : 'Order rejected';
     default:                       return ev.type;
   }
 }
@@ -1893,12 +2123,16 @@ function showToast(html, type = 't-info', ms = 4000) {
   toast.innerHTML = html;
   wrap.appendChild(toast);
   setTimeout(() => {
-    toast.style.opacity = '0';
+    toast.classList.add('out');
     setTimeout(() => toast.remove(), 350);
   }, ms);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
 function fmt(n) {
   return parseFloat(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }

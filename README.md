@@ -1,12 +1,13 @@
 # Matching Engine
 
-A high-throughput order matching engine in Go with a live web UI, real-time BTC price anchoring, and two matching algorithms. Built for learning and demo purposes.
+A high-throughput order matching engine in Go with a live web UI, real-time BTC price anchoring, and three matching methods — order-book FIFO, order-book pro-rata, and an AMM liquidity pool. Built for learning and demo purposes.
 
 ---
 
 ## Features
 
-- **FIFO and Pro-rata matching** — switchable at startup
+- **FIFO, Pro-rata, and AMM matching** — switchable at startup
+- **AMM mode** — constant-product (x·y=k) liquidity pool with swap fee; limit orders rest and auto-trigger when the pool price crosses them; an arbitrage bot pegs the pool to the live BTC price
 - **Order types** — Limit, Market, IOC, FOK
 - **Live BTC price anchor** — a market-maker bot quotes around the real BTC-USD price (via CoinGecko) so the demo book tracks the real market
 - **Web UI** — order book, trade feed, balance, and portfolio value; updates via Server-Sent Events
@@ -32,13 +33,19 @@ Open http://localhost:8080. The market-maker bot starts quoting around the live 
 |------|---------|-------------|
 | `-addr` | `:8080` | HTTP listen address |
 | `-frontend` | `./frontend` | Path to static files |
-| `-mode` | `fifo` | Matching algorithm: `fifo` or `prorata` |
+| `-mode` | `fifo` | Matching method: `fifo`, `prorata`, or `amm` |
 | `-anchor` | `true` | Enable live BTC price anchor |
 | `-feed-interval` | `10s` | Price poll interval (CoinGecko free tier) |
+| `-amm-base` | `25` | AMM mode: initial BTC reserve of the pool |
+| `-amm-price` | `0` | AMM mode: initial pool price (`0` = live index price) |
+| `-amm-fee-bps` | `30` | AMM mode: swap fee in basis points |
 
 ```bash
 # Pro-rata mode without price anchor
 go run ./cmd/server -mode prorata -anchor=false
+
+# AMM mode: 10 BTC pool seeded at the live BTC price, 0.3% fee
+go run ./cmd/server -mode amm -amm-base=10
 ```
 
 ---
@@ -48,11 +55,13 @@ go run ./cmd/server -mode prorata -anchor=false
 ```
 engine/          Core matching engine (order book, FIFO/pro-rata matchers, disruptor ring buffer)
   rbtree.go      Intrusive red-black tree used to index price levels in the order book
+  amm.go         Constant-product (x·y=k) liquidity pool — pricing, quotes, swaps
+  engine_amm.go  AMM execution mode: order routing, resting-limit triggers, synthesized depth
 api/
   httpapi/       HTTP server — REST API + SSE event stream
   grpc/          gRPC server (generated from proto/)
 pricefeed/       Polls live BTC-USD spot price (CoinGecko)
-marketmaker/     Quotes a 5-level bid/ask ladder around the index price
+marketmaker/     Quotes a 5-level bid/ask ladder around the index price; arb bot pegs the AMM pool
 cmd/
   server/        Main HTTP server binary
   simulate/      10-second throughput/latency benchmark
@@ -93,13 +102,22 @@ POST /api/orders
 
 ---
 
-## Matching Algorithms
+## Matching Methods
 
 ### FIFO
 Orders at the same price fill in arrival order. First in, first served — queue position is everything.
 
 ### Pro-rata
 All orders at the same price fill simultaneously, proportional to their size. Used in interest-rate futures markets (e.g. CME Eurodollar).
+
+### AMM (Automated Market Maker)
+No counterparty book — trades execute against a constant-product liquidity pool (`x·y = k`, Uniswap-v2 style) with a configurable swap fee that accrues to the reserves:
+
+- **Market orders** swap at whatever price the curve gives; price impact grows with size.
+- **Limit orders** fill as much as possible while keeping the *average* execution price within the limit; the remainder rests in the book and **auto-triggers** when the pool price later crosses the limit (like a DEX limit order).
+- **IOC** cancels the unfillable remainder; **FOK** executes fully within the limit or rejects with a reason.
+- The web UI's order book shows **depth synthesized from the pool curve** (12 levels per side, 10 bps apart) merged with any resting limit orders, plus a pool-reserves strip.
+- With the price anchor enabled, an **arbitrage bot** pegs the pool to the live BTC index the same way real AMMs track markets: it computes the swap that moves the spot price `y/x` back to the index (`Δx = x − √(k/P)`) and submits it as a market order.
 
 Run the visual demo to see the difference:
 
@@ -181,6 +199,7 @@ go test ./engine/... ./api/httpapi/... ./pricefeed/... ./marketmaker/...
 The test suite covers:
 - Engine correctness (FIFO priority, partial fills, price improvement, IOC/FOK)
 - Pro-rata fill distribution
+- AMM pool math (constant-product invariant, fee accrual, limit-bounded fills) and engine behavior (resting-limit triggers, FOK/IOC semantics, synthesized depth)
 - Disruptor ring buffer concurrency
 - Red-black tree correctness (insertion, deletion, rotations, balance invariants)
 - Smoke tests: multi-level sweeps, cancel, maker/taker event fields

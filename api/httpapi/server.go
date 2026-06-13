@@ -43,14 +43,17 @@ type reservation struct {
 }
 
 type orderRecord struct {
-	ID        string    `json:"id"`
-	Username  string    `json:"username"`
-	Side      string    `json:"side"`
-	Type      string    `json:"type"`
-	Price     string    `json:"price"`
-	Qty       string    `json:"qty"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string          `json:"id"`
+	Username  string          `json:"username"`
+	Side      string          `json:"side"`
+	Type      string          `json:"type"`
+	Price     string          `json:"price"`
+	Qty       string          `json:"qty"`
+	Status    string          `json:"status"`
+	Reason    string          `json:"reason,omitempty"` // why the order was rejected
+	FilledQty decimal.Decimal `json:"filled_qty"`       // cumulative executed quantity
+	CostUSD   decimal.Decimal `json:"total_cost"`       // cumulative executed value (Σ fill qty × fill price)
+	CreatedAt time.Time       `json:"created_at"`
 }
 
 type Server struct {
@@ -150,6 +153,9 @@ func (s *Server) applyEventToRecords(ev engine.Event) {
 			s.orderMu.Lock()
 			if rec, ok := s.orders[ev.OrderID]; ok {
 				rec.Status = status
+				if ev.Reason != "" {
+					rec.Reason = ev.Reason
+				}
 			}
 			s.orderMu.Unlock()
 		}
@@ -166,10 +172,27 @@ func (s *Server) applyEventToRecords(ev engine.Event) {
 		s.releaseAll(ev.OrderID)
 	}
 
-	// Update balances on every trade
+	// Update balances and per-order fill totals on every trade
 	if ev.Type == engine.EvTrade {
+		s.recordFill(ev.MakerID, ev.Qty, ev.Price)
+		s.recordFill(ev.TakerID, ev.Qty, ev.Price)
 		s.applyTradeToBalances(ev)
 	}
+}
+
+// recordFill accumulates an order's executed quantity and cost so clients can
+// see what was actually paid (which differs from limit price × qty for
+// partial fills, multi-level sweeps, and AMM curve fills).
+func (s *Server) recordFill(orderID string, qty, price decimal.Decimal) {
+	if orderID == "" {
+		return
+	}
+	s.orderMu.Lock()
+	if rec, ok := s.orders[orderID]; ok {
+		rec.FilledQty = rec.FilledQty.Add(qty)
+		rec.CostUSD = rec.CostUSD.Add(qty.Mul(price))
+	}
+	s.orderMu.Unlock()
 }
 
 // applyTradeToBalances debits and credits both sides of a trade.
@@ -525,6 +548,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		s.releaseAll(o.ID)
 		s.orderMu.Lock()
 		rec.Status = "REJECTED"
+		rec.Reason = err.Error()
 		s.orderMu.Unlock()
 		writeJSON(w, submitResponse{OrderID: o.ID, Error: err.Error()}, http.StatusOK)
 		return

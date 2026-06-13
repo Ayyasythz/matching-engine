@@ -28,4 +28,6 @@ type Event struct {
 	Side      Side            `json:"side,omitempty"`
 	MakerID   string          `json:"maker_id,omitempty"`
 	TakerID   string          `json:"taker_id,omitempty"`
+	// Reason explains why an order was rejected (set on EvOrderRejected).
+	Reason    string          `json:"reason,omitempty"`
 }

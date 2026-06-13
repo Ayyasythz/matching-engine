@@ -21,6 +21,7 @@ type Engine struct {
 	ring     *RingBuffer
 	events   chan<- Event
 	matcher  Matcher
+	pool     *AMMPool // non-nil in AMM mode
 	seq      uint64
 	stopCh   chan struct{} // closed by Run() when it exits
 }
@@ -48,6 +49,16 @@ func NewEngine(symbol string, events chan<- Event) *Engine {
 
 func NewProRataEngine(symbol string, events chan<- Event) *Engine {
 	return newEngine(symbol, events, ProRataMatcher{})
+}
+
+// NewAMMEngine creates an engine where orders execute against a constant-
+// product liquidity pool instead of a counterparty order book. Limit orders
+// that cannot fill within their price rest in the book and execute
+// automatically once the pool price crosses their limit.
+func NewAMMEngine(symbol string, events chan<- Event, pool *AMMPool) *Engine {
+	e := newEngine(symbol, events, FIFOMatcher{})
+	e.pool = pool
+	return e
 }
 
 func newEngine(symbol string, events chan<- Event, matcher Matcher) *Engine {
@@ -140,6 +151,9 @@ func (e *Engine) Snapshot() (BookSnapshot, error) {
 }
 
 func (e *Engine) snapshot() BookSnapshot {
+	if e.pool != nil {
+		return e.snapshotAMM()
+	}
 	return BookSnapshot{
 		Symbol: e.symbol,
 		Bids:   e.bids.snapshot(),
@@ -163,6 +177,11 @@ func (e *Engine) emit(ev Event) {
 }
 
 func (e *Engine) processOrder(o *Order) {
+	if e.pool != nil {
+		e.processOrderAMM(o)
+		return
+	}
+
 	// Engine-level validation: non-market orders must have a positive price.
 	if o.Type != Market && o.Price.LessThanOrEqual(decimal.Zero) {
 		o.Status = StatusRejected
@@ -171,6 +190,7 @@ func (e *Engine) processOrder(o *Order) {
 			OrderID: o.ID,
 			Symbol:  e.symbol,
 			Qty:     o.Quantity,
+			Reason:  fmt.Sprintf("invalid price %s — %s orders require a price greater than zero", o.Price, o.Type),
 		})
 		return
 	}
@@ -248,6 +268,8 @@ func (e *Engine) matchFOK(o *Order) {
 			OrderID: o.ID,
 			Symbol:  e.symbol,
 			Qty:     o.RemainingQuantity,
+			Reason: fmt.Sprintf("insufficient liquidity for FOK order — need %s, only %s available at %s or better",
+				o.RemainingQuantity, available, o.Price),
 		})
 		delete(e.orderIdx, o.ID)
 		return
