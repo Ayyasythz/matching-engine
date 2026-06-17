@@ -16,6 +16,7 @@ import (
 // real AMMs (Uniswap etc.) in line with external markets.
 type Arb struct {
 	eng        *engine.Engine
+	symbol     string
 	feed       PriceSource
 	interval   time.Duration
 	bandBps    float64 // do nothing while |spot − index| / index is inside this band
@@ -23,12 +24,13 @@ type Arb struct {
 	instanceID string
 }
 
-func NewArb(eng *engine.Engine, feed PriceSource, interval time.Duration) *Arb {
+func NewArb(eng *engine.Engine, symbol string, feed PriceSource, interval time.Duration) *Arb {
 	return &Arb{
 		eng:        eng,
+		symbol:     symbol,
 		feed:       feed,
 		interval:   interval,
-		bandBps:    5, // 5 bps dead band
+		bandBps:    5,
 		instanceID: fmt.Sprintf("%d", time.Now().UnixNano()),
 	}
 }
@@ -46,10 +48,6 @@ func (a *Arb) Run(ctx context.Context) {
 	}
 }
 
-// rebalance compares the pool spot price with the index and swaps exactly the
-// amount that moves the constant-product spot back to the index:
-// for k = x·y, the reserve at price P is x' = √(k/P), so the trade size is
-// |x − x'|. Float math is fine here — the band absorbs any rounding.
 func (a *Arb) rebalance() {
 	index, ok := a.feed.Latest()
 	if !ok {
@@ -89,6 +87,6 @@ func (a *Arb) rebalance() {
 	if qty.LessThanOrEqual(decimal.Zero) {
 		return
 	}
-	o := engine.NewOrder(id, "BTC-USD", side, engine.Market, decimal.Zero, qty)
+	o := engine.NewOrder(id, a.symbol, side, engine.Market, decimal.Zero, qty)
 	_ = a.eng.Submit(o)
 }

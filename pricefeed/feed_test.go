@@ -15,7 +15,7 @@ func TestFetchOnceParsesPrice(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	f := NewWithURL(srv.URL, time.Second)
+	f := NewWithURL(srv.URL, "bitcoin", time.Second)
 	if err := f.fetchOnce(); err != nil {
 		t.Fatalf("fetchOnce: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestFetchErrorKeepsLastPrice(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	f := NewWithURL(srv.URL, time.Second)
+	f := NewWithURL(srv.URL, "bitcoin", time.Second)
 	if err := f.fetchOnce(); err != nil {
 		t.Fatalf("first fetch: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestSubscribeNotifiedOnChange(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	f := NewWithURL(srv.URL, time.Second)
+	f := NewWithURL(srv.URL, "bitcoin", time.Second)
 	ch := f.Subscribe()
 
 	f.fetchOnce()

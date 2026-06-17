@@ -9,16 +9,21 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/shopspring/decimal"
 )
 
-const CoinGeckoBTCUSD = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
+const coinGeckoBase = "https://api.coingecko.com/api/v3/simple/price?vs_currencies=usd&ids="
+
+// CoinGeckoBTCUSD is kept for backward compatibility.
+const CoinGeckoBTCUSD = coinGeckoBase + "bitcoin"
 
 type Feed struct {
 	url      string
+	coinID   string // CoinGecko coin id, e.g. "bitcoin", "ethereum", "solana"
 	interval time.Duration
 	client   *http.Client
 
@@ -27,16 +32,23 @@ type Feed struct {
 	ok               bool
 	subs             []chan decimal.Decimal
 	lastLog          time.Time
-	rateLimitedUntil time.Time // non-zero while backing off after a 429
+	rateLimitedUntil time.Time
 }
 
+// New returns a feed for bitcoin/USD (backward-compatible shorthand).
 func New(interval time.Duration) *Feed {
-	return NewWithURL(CoinGeckoBTCUSD, interval)
+	return NewForCoin("bitcoin", interval)
 }
 
-func NewWithURL(url string, interval time.Duration) *Feed {
+// NewForCoin returns a feed for the given CoinGecko coin id (e.g. "ethereum").
+func NewForCoin(coinID string, interval time.Duration) *Feed {
+	return NewWithURL(coinGeckoBase+strings.ToLower(coinID), coinID, interval)
+}
+
+func NewWithURL(url, coinID string, interval time.Duration) *Feed {
 	return &Feed{
 		url:      url,
+		coinID:   coinID,
 		interval: interval,
 		client:   &http.Client{Timeout: 5 * time.Second},
 	}
@@ -59,8 +71,6 @@ func (f *Feed) Subscribe() <-chan decimal.Decimal {
 func (f *Feed) Run(ctx context.Context) {
 	ticker := time.NewTicker(f.interval)
 	defer ticker.Stop()
-	// Close all subscriber channels when the feed stops so that goroutines
-	// blocking on Subscribe() channels are unblocked rather than leaked.
 	defer f.closeSubs()
 	f.poll()
 	for {
@@ -83,7 +93,6 @@ func (f *Feed) closeSubs() {
 }
 
 func (f *Feed) poll() {
-	// Honour the rate-limit backoff window before making another request.
 	f.mu.RLock()
 	limited := time.Now().Before(f.rateLimitedUntil)
 	f.mu.RUnlock()
@@ -101,12 +110,6 @@ func (f *Feed) poll() {
 	}
 }
 
-type spotResponse struct {
-	Bitcoin struct {
-		USD json.Number `json:"usd"`
-	} `json:"bitcoin"`
-}
-
 func (f *Feed) fetchOnce() error {
 	resp, err := f.client.Get(f.url)
 	if err != nil {
@@ -115,7 +118,6 @@ func (f *Feed) fetchOnce() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		// Back off for at least 60 s, or as long as the server requests.
 		backoff := 60 * time.Second
 		if ra := resp.Header.Get("Retry-After"); ra != "" {
 			if secs, err := strconv.Atoi(ra); err == nil && secs > 0 {
@@ -131,13 +133,18 @@ func (f *Feed) fetchOnce() error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("fetch spot price: status %d", resp.StatusCode)
 	}
-	var sr spotResponse
-	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
+
+	var raw map[string]map[string]json.Number
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return fmt.Errorf("decode spot price: %w", err)
 	}
-	p, err := decimal.NewFromString(sr.Bitcoin.USD.String())
+	coinData, ok := raw[f.coinID]
+	if !ok {
+		return fmt.Errorf("coin %q not found in price response", f.coinID)
+	}
+	p, err := decimal.NewFromString(coinData["usd"].String())
 	if err != nil || p.LessThanOrEqual(decimal.Zero) {
-		return fmt.Errorf("invalid spot price %q", sr.Bitcoin.USD)
+		return fmt.Errorf("invalid spot price %q for %s", coinData["usd"], f.coinID)
 	}
 
 	f.mu.Lock()

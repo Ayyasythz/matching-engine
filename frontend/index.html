@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://s3.tradingview.com/tv.js" async></script>
   <style>
 /* ── Tokens ────────────────────────────────────────────────────────────────── */
 :root {
@@ -424,6 +425,22 @@ header {
 }
 
 .theme-btn:hover { border-color: var(--gold); }
+
+/* ── Market tabs ────────────────────────────────────────────────────────────── */
+.mkt-tabs { display: flex; gap: 3px; align-items: center; }
+
+.mkt-tab {
+  padding: 4px 12px;
+  background: transparent;
+  border: 1px solid var(--bd2);
+  border-radius: var(--rs);
+  color: var(--tx2);
+  font-family: inherit; font-size: 11px; font-weight: 600;
+  cursor: pointer; transition: all .15s; letter-spacing: .2px;
+}
+
+.mkt-tab:hover { border-color: var(--gold-bd); color: var(--tx1); }
+.mkt-tab.active { background: var(--gold-bg); border-color: var(--gold-bd); color: var(--gold); }
 
 /* ── Layout ────────────────────────────────────────────────────────────────── */
 .layout {
@@ -1045,6 +1062,60 @@ select:focus { border-color: var(--gold); }
     transition-duration: .01ms !important;
   }
 }
+
+/* ── TradingView chart row ─────────────────────────────────────────────────── */
+.chart-row {
+  height: 300px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--bd1);
+  position: relative;
+  overflow: hidden;
+  transition: height .25s ease;
+  background: var(--bg);
+}
+
+.chart-row.collapsed { height: 0; border-bottom: none; }
+
+.chart-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 14px;
+  height: 32px;
+  background: var(--s1);
+  border-bottom: 1px solid var(--bd1);
+  flex-shrink: 0;
+  font-size: 10px; font-weight: 600;
+  color: var(--tx2); text-transform: uppercase; letter-spacing: .6px;
+}
+
+.chart-container {
+  position: absolute;
+  top: 32px; left: 0; right: 0; bottom: 0;
+}
+
+.chart-toggle-btn {
+  margin-left: auto;
+  padding: 3px 10px;
+  background: transparent;
+  border: 1px solid var(--bd2);
+  border-radius: 12px;
+  color: var(--tx2);
+  font-family: inherit; font-size: 10px; font-weight: 600;
+  cursor: pointer; transition: all .15s; letter-spacing: .3px;
+}
+.chart-toggle-btn:hover { border-color: var(--gold-bd); color: var(--gold); }
+
+/* Header chart button */
+.chart-hdr-btn {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--bd2);
+  border-radius: 20px;
+  color: var(--tx2); font-family: inherit; font-size: 11px; font-weight: 500;
+  cursor: pointer; transition: all .15s;
+}
+.chart-hdr-btn:hover { border-color: var(--gold-bd); color: var(--gold); }
+.chart-hdr-btn.active { background: var(--gold-bg); border-color: var(--gold-bd); color: var(--gold); }
   </style>
 </head>
 <body>
@@ -1069,7 +1140,7 @@ select:focus { border-color: var(--gold); }
         <div class="step-icon">📋</div>
         <div class="step-text">
           <strong>Post a Buy or Sell order</strong>
-          <span>Say how much BTC you want and at what price. Your order waits in the <em>order book</em>.</span>
+          <span>Pick a market (BTC, ETH, SOL), enter an amount and price. Your order waits in the <em>order book</em>.</span>
         </div>
       </div>
       <div class="welcome-step">
@@ -1105,16 +1176,22 @@ select:focus { border-color: var(--gold); }
   <div class="logo-diamond"></div>
   <span class="logo-text">Matching Engine</span>
   <div class="hdiv"></div>
+  <div class="mkt-tabs" id="mkt-tabs">
+    <button class="mkt-tab active" data-symbol="BTC-USD" onclick="selectMarket('BTC-USD')">BTC/USD</button>
+    <button class="mkt-tab" data-symbol="ETH-USD" onclick="selectMarket('ETH-USD')">ETH/USD</button>
+    <button class="mkt-tab" data-symbol="SOL-USD" onclick="selectMarket('SOL-USD')">SOL/USD</button>
+  </div>
+  <div class="hdiv"></div>
   <div class="symbol-wrap">
-    <div class="symbol-name">BTC / USD</div>
-    <div class="symbol-full">Bitcoin · Simulation</div>
+    <div class="symbol-name" id="h-symbol">BTC / USD</div>
+    <div class="symbol-full" id="h-symbol-full">Bitcoin · Simulation</div>
   </div>
   <span id="h-price">—</span>
   <span id="h-change"></span>
   <div class="hdiv"></div>
   <div class="symbol-wrap">
     <div class="symbol-name" id="h-index" style="font-variant-numeric:tabular-nums">—</div>
-    <div class="symbol-full">Live BTC · CoinGecko</div>
+    <div class="symbol-full" id="h-index-label">Live BTC · CoinGecko</div>
   </div>
   <div class="spacer"></div>
   <div class="h-traders">
@@ -1125,6 +1202,9 @@ select:focus { border-color: var(--gold); }
     <div class="user-avatar" id="user-avatar">?</div>
     <span id="user-name">—</span>
   </div>
+  <button class="chart-hdr-btn active" id="chart-hdr-btn" onclick="toggleChart()" title="Show/hide TradingView chart">
+    📈 Chart
+  </button>
   <button class="share-btn" onclick="shareLink()">
     <span>🔗</span> Share
   </button>
@@ -1133,6 +1213,18 @@ select:focus { border-color: var(--gold); }
 
 <!-- ── Main ────────────────────────────────────────────────────────────────── -->
 <div class="layout">
+
+<!-- ── TradingView Chart ──────────────────────────────────────────────────── -->
+<div class="chart-row" id="chart-row">
+  <div class="chart-bar">
+    <span id="chart-market-label">BTC/USD</span>
+    <span style="color:var(--tx3)">·</span>
+    <span style="color:var(--tx3)">Live Chart · TradingView</span>
+    <button class="chart-toggle-btn" onclick="toggleChart()">▲ Hide</button>
+  </div>
+  <div class="chart-container" id="tv-chart"></div>
+</div>
+
 <div class="main">
 
   <!-- ── LEFT: Place Order ──────────────────────────────────────────────────── -->
@@ -1171,7 +1263,7 @@ select:focus { border-color: var(--gold); }
             Your Balance
             <span class="ti"
               data-tip-title="Your Balance"
-              data-tip="Everyone starts with $100,000 USD and 2 BTC. Your balance updates automatically every time one of your orders gets filled. The portfolio value is USD + BTC × current market price.">ⓘ</span>
+              data-tip="Everyone starts with $100,000 USD, 2 BTC, 10 ETH and 200 SOL. Your balance updates automatically every time one of your orders gets filled.">ⓘ</span>
           </div>
           <div class="portfolio-value">
             Portfolio: <strong id="portfolio-total">—</strong>
@@ -1190,8 +1282,8 @@ select:focus { border-color: var(--gold); }
           <div class="balance-divider"></div>
           <div class="balance-cell" id="bal-btc-cell">
             <div class="balance-cell-label">
-              <span class="bal-currency">BTC</span>
-              Bitcoin held
+              <span class="bal-currency" id="bal-token-label">BTC</span>
+              <span id="bal-token-desc">Bitcoin held</span>
             </div>
             <div class="balance-amount btc" id="bal-btc">2.0000</div>
             <div class="balance-sub" id="bal-btc-change"></div>
@@ -1201,17 +1293,17 @@ select:focus { border-color: var(--gold); }
 
       <!-- Buy / Sell -->
       <div class="side-seg">
-        <button class="side-btn active-buy" id="btn-buy"  onclick="setSide('buy')">Buy BTC</button>
-        <button class="side-btn"            id="btn-sell" onclick="setSide('sell')">Sell BTC</button>
+        <button class="side-btn active-buy" id="btn-buy"  onclick="setSide('buy')">Buy <span id="btn-base-label">BTC</span></button>
+        <button class="side-btn"            id="btn-sell" onclick="setSide('sell')">Sell <span id="btn-base-label2">BTC</span></button>
       </div>
 
       <!-- Amount + Price (always visible) -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
         <div class="fg" style="margin-bottom:0">
-          <div class="fl">Amount (BTC)</div>
+          <div class="fl">Amount (<span id="qty-label">BTC</span>)</div>
           <div class="input-wrap">
             <input type="number" id="order-qty" placeholder="0.0000" min="0" step="0.0001" oninput="calcApprox()">
-            <span class="input-unit">BTC</span>
+            <span class="input-unit" id="qty-unit">BTC</span>
           </div>
         </div>
         <div class="fg" style="margin-bottom:0" id="price-group">
@@ -1262,6 +1354,7 @@ select:focus { border-color: var(--gold); }
 
       <div class="form-msg" id="form-msg"></div>
       <button class="submit-btn buy" id="submit-btn" onclick="submitOrder()">Buy BTC-USD</button>
+
     </div>
   </div>
 
@@ -1287,7 +1380,7 @@ select:focus { border-color: var(--gold); }
           <div class="book-side-label ask">↓ SELLERS (asking this price or higher)</div>
           <div class="book-col-hdr">
             <span>Price (USD)</span>
-            <span class="tr">Volume (BTC)</span>
+            <span class="tr">Volume (<span id="book-vol-label">BTC</span>)</span>
             <span class="tr">Orders</span>
           </div>
           <div id="asks-wrap"></div>
@@ -1310,7 +1403,7 @@ select:focus { border-color: var(--gold); }
             data-tip="Every trade has a Maker (the resting order that provided liquidity) and a Taker (the incoming order that matched against it). The trade price is always the Maker's limit price.">ⓘ</span>
         </div>
         <div class="col-hdr trade-col">
-          <span>Price (USD)</span><span class="tr">BTC</span><span class="tr">Time</span>
+          <span>Price (USD)</span><span class="tr" id="trades-qty-label">BTC</span><span class="tr">Time</span>
         </div>
         <div class="scroll-list" id="trades-list"></div>
       </div>
@@ -1343,13 +1436,13 @@ select:focus { border-color: var(--gold); }
     <table class="orders-table">
       <thead>
         <tr>
-          <th>Order ID</th><th>Side</th><th>Type</th>
+          <th>Order ID</th><th>Market</th><th>Side</th><th>Type</th>
           <th>Price</th><th>Qty</th><th>Filled</th>
           <th>Avg Price</th><th>Total (USD)</th><th>Status</th><th></th>
         </tr>
       </thead>
       <tbody id="my-orders-body">
-        <tr><td colspan="10" class="empty-cell">No orders yet — place one to get started!</td></tr>
+        <tr><td colspan="11" class="empty-cell">No orders yet — place one to get started!</td></tr>
       </tbody>
     </table>
   </div>
@@ -1372,16 +1465,26 @@ select:focus { border-color: var(--gold); }
 </div>
 
 <script>
+// ── Market definitions ────────────────────────────────────────────────────────
+const MARKETS = {
+  'BTC-USD': { base: 'BTC', name: 'Bitcoin',  full: 'BTC / USD', desc: 'Bitcoin · Simulation',  coinLabel: 'Live BTC · CoinGecko' },
+  'ETH-USD': { base: 'ETH', name: 'Ethereum', full: 'ETH / USD', desc: 'Ethereum · Simulation', coinLabel: 'Live ETH · CoinGecko' },
+  'SOL-USD': { base: 'SOL', name: 'Solana',   full: 'SOL / USD', desc: 'Solana · Simulation',   coinLabel: 'Live SOL · CoinGecko' },
+};
+
 // ── State ─────────────────────────────────────────────────────────────────────
-let username    = '';
-let userColor   = '#26a69a';
-let currentSide = 'buy';
-let isAdvanced  = false;
-let bookSnap    = { bids: [], asks: [] };
-let tradeCount  = 0;
-let lastPrice   = null;
-let myOrderIds  = new Set();   // IDs of orders submitted in this session
-let myOrders    = [];
+let username       = '';
+let userColor      = '#26a69a';
+let currentSide    = 'buy';
+let currentSymbol  = 'BTC-USD';
+let isAdvanced     = false;
+let bookSnap       = { bids: [], asks: [] };
+let tradeCount     = 0;
+let lastPrice      = null;          // last trade price for currentSymbol
+let lastPriceBySymbol = {};         // symbol → last trade price
+let indexPricesBySymbol = {};       // symbol → live index price
+let myOrderIds     = new Set();
+let myOrders       = [];
 
 const COLORS = ['#26a69a','#089981','#3cbfb2','#4db6ac','#00897b','#5c9ead','#607d8b','#78909c'];
 
@@ -1391,6 +1494,8 @@ function applyTheme(t) {
   const btn = document.getElementById('theme-btn');
   if (btn) btn.textContent = t === 'dark' ? '☀️' : '🌙';
   localStorage.setItem('theme', t);
+  // Recreate chart so it picks up the new theme
+  updateChart();
 }
 
 function toggleTheme() {
@@ -1399,6 +1504,66 @@ function toggleTheme() {
 
 function initTheme() {
   applyTheme(localStorage.getItem('theme') || 'dark');
+}
+
+// ── TradingView chart ─────────────────────────────────────────────────────────
+const TV_SYMBOLS = {
+  'BTC-USD': 'BINANCE:BTCUSDT',
+  'ETH-USD': 'BINANCE:ETHUSDT',
+  'SOL-USD': 'BINANCE:SOLUSDT',
+};
+
+let chartVisible = true;
+let tvWidget     = null;
+let tvInitTimer  = null;
+
+function initChart() {
+  if (!chartVisible) return;
+  const container = document.getElementById('tv-chart');
+  if (!container) return;
+
+  if (typeof TradingView === 'undefined') {
+    // Library not yet loaded; retry until it arrives
+    clearTimeout(tvInitTimer);
+    tvInitTimer = setTimeout(initChart, 400);
+    return;
+  }
+
+  container.innerHTML = ''; // clear any previous widget
+  const tvSym  = TV_SYMBOLS[currentSymbol] || 'BINANCE:BTCUSDT';
+  const isDark = document.documentElement.dataset.theme !== 'light';
+
+  tvWidget = new TradingView.widget({
+    autosize:           true,
+    symbol:             tvSym,
+    interval:           '60',
+    timezone:           'Etc/UTC',
+    theme:              isDark ? 'dark' : 'light',
+    style:              '1',     // candlestick
+    locale:             'en',
+    hide_top_toolbar:   false,
+    hide_legend:        true,
+    allow_symbol_change: false,
+    save_image:         false,
+    container_id:       'tv-chart',
+  });
+}
+
+function updateChart() {
+  if (!chartVisible) return;
+  // Recreate with new symbol / theme
+  initChart();
+}
+
+function toggleChart() {
+  chartVisible = !chartVisible;
+  const row = document.getElementById('chart-row');
+  const btn = document.getElementById('chart-hdr-btn');
+  const inner = document.querySelector('.chart-toggle-btn');
+  row.classList.toggle('collapsed', !chartVisible);
+  btn.classList.toggle('active', chartVisible);
+  if (inner) inner.textContent = chartVisible ? '▲ Hide' : '▼ Show';
+  if (chartVisible) initChart();
 }
 
 const TYPE_HINTS = {
@@ -1553,12 +1718,13 @@ function updatePriceHint() {
 // ── Side / Advanced ───────────────────────────────────────────────────────────
 function setSide(s) {
   currentSide  = s;
-  priceTouched = false; // reset so new side gets a fresh auto-fill
+  priceTouched = false;
   document.getElementById('btn-buy').className  = 'side-btn' + (s === 'buy'  ? ' active-buy'  : '');
   document.getElementById('btn-sell').className = 'side-btn' + (s === 'sell' ? ' active-sell' : '');
+  const base = currentBase();
   const btn = document.getElementById('submit-btn');
   btn.className   = 'submit-btn ' + s;
-  btn.textContent = (s === 'buy' ? 'Place Buy Order' : 'Place Sell Order');
+  btn.textContent = s === 'buy' ? `Buy ${currentSymbol}` : `Sell ${currentSymbol}`;
   highlightActiveBalance();
   updatePricePreFill();
 }
@@ -1620,29 +1786,34 @@ function calcApprox() {
   if (remaining > 0) {
     const filled = qty - remaining;
     row.className   = 'approx-row warn';
-    row.textContent = `Partial fill: ${filled.toFixed(4)} BTC for ≈$${fmt(total)}, then your order rests in the book for the remainder.`;
+    row.textContent = `Partial fill: ${filled.toFixed(4)} ${currentBase()} for ≈$${fmt(total)}, then your order rests in the book for the remainder.`;
   } else {
     const verb = currentSide === 'buy' ? "You'll pay" : "You'll receive";
     row.className   = 'approx-row ok';
-    row.textContent = `${verb} ≈ $${fmt(total)} USD  (avg $${(total/qty).toFixed(2)}/BTC)`;
+    row.textContent = `${verb} ≈ $${fmt(total)} USD  (avg $${(total/qty).toFixed(2)}/${currentBase()})`;
   }
 }
 
 // ── Balance / Portfolio ───────────────────────────────────────────────────────
-let balUSD = 100000;
-let balBTC = 2;
-let prevBalUSD = 100000;
-let prevBalBTC = 2;
-const START_USD = 100000;
-const START_BTC = 2;
+let balUSD         = 100000;
+let tokenBalances  = { BTC: 2, ETH: 10, SOL: 200 };
+let prevBalUSD     = 100000;
+let prevTokenBal   = { BTC: 2, ETH: 10, SOL: 200 };
+const START_USD    = 100000;
+const START_TOKENS = { BTC: 2, ETH: 10, SOL: 200 };
+
+function currentBase() { return (MARKETS[currentSymbol] || MARKETS['BTC-USD']).base; }
 
 async function loadBalance() {
   try {
     const res  = await fetch('/api/me/balance');
     const data = await res.json();
     const newUSD = parseFloat(data.usd);
-    const newBTC = parseFloat(data.btc);
-    updateBalanceDisplay(newUSD, newBTC, true);
+    // Merge server token values into local map
+    const serverTokens = data.tokens || {};
+    const merged = Object.assign({}, tokenBalances);
+    for (const [k, v] of Object.entries(serverTokens)) merged[k] = parseFloat(v);
+    updateBalanceDisplay(newUSD, merged, true);
   } catch (_) {}
 }
 
@@ -1662,9 +1833,13 @@ function tweenNumber(el, from, to, fmtFn, ms = 500) {
   requestAnimationFrame(step);
 }
 
-function updateBalanceDisplay(newUSD, newBTC, animate) {
-  const usdChanged = Math.abs(newUSD - balUSD) > 0.001;
-  const btcChanged = Math.abs(newBTC - balBTC) > 0.001;
+function updateBalanceDisplay(newUSD, newTokens, animate) {
+  const base = currentBase();
+
+  const usdChanged   = Math.abs(newUSD - balUSD) > 0.001;
+  const newBaseAmt   = newTokens[base] || 0;
+  const oldBaseAmt   = tokenBalances[base] || 0;
+  const tokenChanged = Math.abs(newBaseAmt - oldBaseAmt) > 0.000001;
 
   if (usdChanged) {
     const diff = newUSD - balUSD;
@@ -1678,54 +1853,123 @@ function updateBalanceDisplay(newUSD, newBTC, animate) {
     }
     if (Math.abs(diff) > 0.001) {
       const sign = diff > 0 ? '+' : '';
-      chg.textContent  = `${sign}$${fmt(Math.abs(diff))} from last trade`;
-      chg.className    = 'balance-sub ' + (diff > 0 ? 'pnl-positive' : 'pnl-negative');
+      chg.textContent = `${sign}$${fmt(Math.abs(diff))} from last trade`;
+      chg.className   = 'balance-sub ' + (diff > 0 ? 'pnl-positive' : 'pnl-negative');
     }
     prevBalUSD = balUSD;
     balUSD = newUSD;
   }
 
-  if (btcChanged) {
-    const diff = newBTC - balBTC;
+  if (tokenChanged) {
+    const diff = newBaseAmt - oldBaseAmt;
     const el   = document.getElementById('bal-btc');
     const chg  = document.getElementById('bal-btc-change');
     if (animate) {
-      tweenNumber(el, balBTC, newBTC, v => v.toFixed(4));
+      tweenNumber(el, oldBaseAmt, newBaseAmt, v => v.toFixed(4));
       el.classList.remove('bal-flash'); void el.offsetWidth; el.classList.add('bal-flash');
     } else {
-      el.textContent = newBTC.toFixed(4);
+      el.textContent = newBaseAmt.toFixed(4);
     }
-    if (Math.abs(diff) > 0.00001) {
+    if (Math.abs(diff) > 0.000001) {
       const sign = diff > 0 ? '+' : '';
-      chg.textContent  = `${sign}${diff.toFixed(4)} BTC from last trade`;
-      chg.className    = 'balance-sub ' + (diff > 0 ? 'pnl-positive' : 'pnl-negative');
+      chg.textContent = `${sign}${diff.toFixed(4)} ${base} from last trade`;
+      chg.className   = 'balance-sub ' + (diff > 0 ? 'pnl-positive' : 'pnl-negative');
     }
-    prevBalBTC = balBTC;
-    balBTC = newBTC;
+    prevTokenBal = Object.assign({}, tokenBalances);
+    tokenBalances = Object.assign({}, newTokens);
+  } else if (!tokenChanged && JSON.stringify(newTokens) !== JSON.stringify(tokenBalances)) {
+    // Other tokens changed (different market); update without flashing current base
+    tokenBalances = Object.assign({}, newTokens);
   }
 
-  // Portfolio total & P&L (uses current market price)
-  if (lastPrice) {
-    const portfolioUSD = balUSD + balBTC * lastPrice;
-    const startPortfolio = START_USD + START_BTC * lastPrice;
-    const pnl = portfolioUSD - startPortfolio;
-    const sign = pnl >= 0 ? '+' : '';
+  // Portfolio total across all held tokens
+  let portfolioUSD  = balUSD;
+  let startPortfolio = START_USD;
+  for (const [sym, info] of Object.entries(MARKETS)) {
+    const price = indexPricesBySymbol[sym] || lastPriceBySymbol[sym] || 0;
+    portfolioUSD   += (tokenBalances[info.base]  || 0) * price;
+    startPortfolio += (START_TOKENS[info.base]   || 0) * price;
+  }
 
+  if (portfolioUSD > balUSD) {
+    const pnl  = portfolioUSD - startPortfolio;
+    const sign = pnl >= 0 ? '+' : '';
     document.getElementById('portfolio-total').textContent = '$' + fmt(portfolioUSD);
     const pnlEl = document.getElementById('portfolio-pnl');
     pnlEl.textContent = ` (${sign}$${fmt(Math.abs(pnl))})`;
     pnlEl.className   = 'pnl-' + (pnl > 0.01 ? 'positive' : pnl < -0.01 ? 'negative' : 'neutral');
   } else {
-    document.getElementById('portfolio-total').textContent = '$' + fmt(balUSD + balBTC * 0);
+    document.getElementById('portfolio-total').textContent = '$' + fmt(balUSD);
   }
 
   highlightActiveBalance();
 }
 
 function highlightActiveBalance() {
-  // Highlight the balance the user is about to spend
   document.getElementById('bal-usd-cell').classList.toggle('active', currentSide === 'buy');
   document.getElementById('bal-btc-cell').classList.toggle('active', currentSide === 'sell');
+}
+
+// ── Market switching ──────────────────────────────────────────────────────────
+function selectMarket(symbol) {
+  if (!(symbol in MARKETS)) return;
+  currentSymbol = symbol;
+  const info = MARKETS[symbol];
+  const base = info.base;
+
+  // Update market tab highlights
+  document.querySelectorAll('.mkt-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.symbol === symbol);
+  });
+
+  // Update header labels
+  document.getElementById('h-symbol').textContent      = info.full;
+  document.getElementById('h-symbol-full').textContent = info.desc;
+  document.getElementById('h-index-label').textContent  = info.coinLabel;
+
+  // Update index price display for new market
+  const idx = indexPricesBySymbol[symbol];
+  document.getElementById('h-index').textContent = idx ? '$' + fmt(idx) : '—';
+
+  // Update market price display to last trade for new symbol
+  const lp = lastPriceBySymbol[symbol] || null;
+  lastPrice = lp;
+  document.getElementById('h-price').textContent  = lp ? '$' + fmt(lp) : '—';
+  document.getElementById('h-change').textContent = '';
+
+  // Update base-token labels throughout the form
+  document.getElementById('btn-base-label').textContent  = base;
+  document.getElementById('btn-base-label2').textContent = base;
+  document.getElementById('qty-label').textContent       = base;
+  document.getElementById('qty-unit').textContent        = base;
+  document.getElementById('book-vol-label').textContent  = base;
+  document.getElementById('trades-qty-label').textContent = base;
+  document.getElementById('bal-token-label').textContent  = base;
+  document.getElementById('bal-token-desc').textContent   = info.name + ' held';
+
+  // Re-apply side label (buy/sell button text & submit button)
+  setSide(currentSide);
+
+  // Refresh data for the new market
+  lastMid = null;
+  bookSnap = { bids: [], asks: [] };
+  document.getElementById('asks-wrap').innerHTML = '';
+  document.getElementById('bids-wrap').innerHTML = '';
+
+  // Refresh base token balance display
+  const amt = tokenBalances[base] || 0;
+  document.getElementById('bal-btc').textContent = amt.toFixed(4);
+  document.getElementById('bal-btc-change').textContent = '';
+
+  priceTouched = false;
+  refreshBook();
+  updatePricePreFill();
+  highlightActiveBalance();
+
+  // Update chart for new market
+  const chartLabel = document.getElementById('chart-market-label');
+  if (chartLabel) chartLabel.textContent = info.full;
+  updateChart();
 }
 
 // ── Submit ────────────────────────────────────────────────────────────────────
@@ -1750,7 +1994,7 @@ async function submitOrder() {
     const res = await fetch('/api/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol: 'BTC-USD', side: currentSide, type, price, qty, username }),
+      body: JSON.stringify({ symbol: currentSymbol, side: currentSide, type, price, qty, username }),
     });
     const data = await res.json();
     if (data.error) {
@@ -1803,7 +2047,7 @@ async function loadMyOrders() {
 function renderMyOrders() {
   const tb = document.getElementById('my-orders-body');
   if (!myOrders.length) {
-    tb.innerHTML = '<tr><td colspan="10" class="empty-cell">No orders yet — place one to get started!</td></tr>';
+    tb.innerHTML = '<tr><td colspan="11" class="empty-cell">No orders yet — place one to get started!</td></tr>';
     return;
   }
   tb.innerHTML = myOrders.map(o => {
@@ -1830,6 +2074,7 @@ function renderMyOrders() {
 
     return `<tr>
       <td><span class="id-mono">${o.id.slice(0,8)}…</span></td>
+      <td><span class="id-mono" style="font-size:10px;color:var(--tx2)">${o.symbol || 'BTC-USD'}</span></td>
       <td><span class="bdg ${o.side}">${o.side.toUpperCase()}</span></td>
       <td>${o.type}</td>
       <td>${prc}</td>
@@ -1855,10 +2100,10 @@ function updateMyOrderStatus(orderID, status, reason) {
 // ── Order Book ────────────────────────────────────────────────────────────────
 async function refreshBook() {
   try {
-    const res = await fetch('/api/book');
+    const res = await fetch('/api/book?symbol=' + encodeURIComponent(currentSymbol));
     bookSnap  = await res.json();
     renderBook(bookSnap);
-    updatePricePreFill(); // may auto-fill price + recalc approx
+    updatePricePreFill();
   } catch (_) {}
 }
 
@@ -1870,7 +2115,7 @@ function renderBook(snap) {
   if (snap.amm) {
     poolEl.style.display = '';
     document.getElementById('pool-stats').textContent =
-      `${parseFloat(snap.amm.base_reserve).toFixed(4)} BTC · $${fmt(parseFloat(snap.amm.quote_reserve))} · fee ${(snap.amm.fee_bps / 100).toFixed(2)}%`;
+      `${parseFloat(snap.amm.base_reserve).toFixed(4)} ${currentBase()} · $${fmt(parseFloat(snap.amm.quote_reserve))} · fee ${(snap.amm.fee_bps / 100).toFixed(2)}%`;
   } else {
     poolEl.style.display = 'none';
   }
@@ -1981,9 +2226,14 @@ function connectSSE() {
 
 function onEvent(ev) {
   if (ev.type === 'INDEX_PRICE') {
-    const el = document.getElementById('h-index');
-    el.textContent = '$' + fmt(parseFloat(ev.price));
-    el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    indexPricesBySymbol[ev.symbol] = parseFloat(ev.price);
+    if (ev.symbol === currentSymbol) {
+      const el = document.getElementById('h-index');
+      el.textContent = '$' + fmt(parseFloat(ev.price));
+      el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    }
+    // Re-compute portfolio with updated index prices
+    updateBalanceDisplay(balUSD, tokenBalances, false);
     return;
   }
 
@@ -1999,10 +2249,13 @@ function onEvent(ev) {
   if (ev.type === 'trade') {
     tradeCount++;
     document.getElementById('trade-val').textContent = tradeCount;
-    updateLastPrice(parseFloat(ev.price));
-    addTradeRow(ev);
-    refreshBook();
-    // Refresh balance and order totals if this trade involved the current user
+    // Track price per symbol; only update displayed price for the active market
+    lastPriceBySymbol[ev.symbol] = parseFloat(ev.price);
+    if (ev.symbol === currentSymbol) {
+      updateLastPrice(parseFloat(ev.price));
+      addTradeRow(ev);
+      refreshBook();
+    }
     const isMineForBalance = myOrderIds.has(ev.maker_id) || myOrderIds.has(ev.taker_id);
     if (isMineForBalance) { loadBalance(); loadMyOrders(); }
   }
@@ -2014,11 +2267,13 @@ function onEvent(ev) {
     if (isMineTrade) {
       const isTaker  = myOrderIds.has(ev.taker_id);
       const action   = isTaker ? (currentSide === 'buy' ? 'bought' : 'sold') : 'traded';
-      showToast(`<strong>⚡ Trade executed!</strong>You ${action} ${q.toFixed(4)} BTC at $${fmt(p)}`, 't-' + currentSide, 5000);
+      const evBase   = ev.symbol ? ev.symbol.split('-')[0] : currentBase();
+      showToast(`<strong>⚡ Trade executed!</strong>You ${action} ${q.toFixed(4)} ${evBase} at $${fmt(p)}`, 't-' + currentSide, 5000);
     } else if (ev.type === 'order.filled') {
       showToast(`<strong>✅ Order fully filled!</strong>${fmt(p) !== '0' ? `At $${fmt(p)}` : ''} — check My Orders`, 't-info', 4000);
     } else if (ev.type === 'order.partially_filled') {
-      showToast(`<strong>Partial fill</strong>${q.toFixed(4)} BTC at $${fmt(p)} — order still resting`, 't-info', 3500);
+      const evBase2 = ev.symbol ? ev.symbol.split('-')[0] : currentBase();
+      showToast(`<strong>Partial fill</strong>${q.toFixed(4)} ${evBase2} at $${fmt(p)} — order still resting`, 't-info', 3500);
     } else if (ev.type === 'order.rejected') {
       const why = ev.reason || 'The engine could not accept this order.';
       showToast(`<strong>Order rejected</strong>${esc(why)}`, 't-error', 5000);
@@ -2041,8 +2296,7 @@ function updateLastPrice(price) {
     chg.style.color = d >= 0 ? 'var(--buy)' : 'var(--sell)';
   }
   lastPrice = price;
-  // Recompute portfolio value with new market price (no server call needed)
-  updateBalanceDisplay(balUSD, balBTC, false);
+  updateBalanceDisplay(balUSD, tokenBalances, false);
 }
 
 function addTradeRow(ev) {
@@ -2070,28 +2324,30 @@ const EV_TAG = {
 };
 
 function humanize(ev, isMine) {
-  const p = ev.price ? parseFloat(ev.price) : 0;
-  const q = ev.qty   ? parseFloat(ev.qty)   : 0;
-  const side = ev.side ? ev.side.toUpperCase() : '';
+  const p    = ev.price ? parseFloat(ev.price) : 0;
+  const q    = ev.qty   ? parseFloat(ev.qty)   : 0;
+  const side = ev.side  ? ev.side.toUpperCase() : '';
+  const base = ev.symbol ? ev.symbol.split('-')[0] : currentBase();
+  const sym  = ev.symbol || currentSymbol;
 
   if (isMine) {
     switch (ev.type) {
-      case 'order.accepted':         return `Your ${side} order is in the book — waiting for a match`;
-      case 'order.filled':           return `Your order was completely filled${p ? ` at $${fmt(p)}` : ''}`;
-      case 'order.partially_filled': return `Partial fill — ${q.toFixed(4)} BTC at $${fmt(p)}`;
-      case 'order.cancelled':        return `Your order was cancelled (${q.toFixed(4)} BTC unfilled)`;
+      case 'order.accepted':         return `Your ${side} ${sym} order is in the book — waiting for a match`;
+      case 'order.filled':           return `Your ${sym} order was completely filled${p ? ` at $${fmt(p)}` : ''}`;
+      case 'order.partially_filled': return `Partial fill — ${q.toFixed(4)} ${base} at $${fmt(p)}`;
+      case 'order.cancelled':        return `Your ${sym} order was cancelled (${q.toFixed(4)} ${base} unfilled)`;
       case 'order.rejected':         return ev.reason ? `Your order was rejected — ${esc(ev.reason)}` : 'Your order was rejected';
-      case 'trade':                  return `⚡ Trade: ${q.toFixed(4)} BTC at $${fmt(p)}`;
+      case 'trade':                  return `⚡ Trade: ${q.toFixed(4)} ${base} at $${fmt(p)}`;
     }
   }
 
   switch (ev.type) {
-    case 'trade':                  return `${q.toFixed(4)} BTC traded at $${fmt(p)}`;
-    case 'order.filled':           return `Order filled at $${fmt(p)}`;
-    case 'order.partially_filled': return `Partial fill — ${q.toFixed(4)} BTC at $${fmt(p)}`;
-    case 'order.accepted':         return `New ${side} order added to book`;
-    case 'order.cancelled':        return `Order cancelled`;
-    case 'order.rejected':         return ev.reason ? `Order rejected — ${esc(ev.reason)}` : 'Order rejected';
+    case 'trade':                  return `[${sym}] ${q.toFixed(4)} ${base} traded at $${fmt(p)}`;
+    case 'order.filled':           return `[${sym}] Order filled at $${fmt(p)}`;
+    case 'order.partially_filled': return `[${sym}] Partial fill — ${q.toFixed(4)} ${base} at $${fmt(p)}`;
+    case 'order.accepted':         return `[${sym}] New ${side} order added to book`;
+    case 'order.cancelled':        return `[${sym}] Order cancelled`;
+    case 'order.rejected':         return ev.reason ? `[${sym}] Order rejected — ${esc(ev.reason)}` : `[${sym}] Order rejected`;
     default:                       return ev.type;
   }
 }
@@ -2151,10 +2407,11 @@ highlightActiveBalance();
 refreshBook();
 loadBalance();
 loadMyOrders();
+initChart();
 setInterval(refreshBook,  3000);
 setInterval(pollPresence, 6000);
-setInterval(loadBalance,  10000); // periodic sync in case of missed events
-setInterval(loadMyOrders, 5000);  // keep the bottom orders panel fresh
+setInterval(loadBalance,  10000);
+setInterval(loadMyOrders, 5000);
 connectSSE();
 </script>
 </body>

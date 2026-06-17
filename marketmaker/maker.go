@@ -33,18 +33,19 @@ func DefaultConfig() Config {
 
 type Maker struct {
 	eng        *engine.Engine
+	symbol     string
 	feed       PriceSource
 	cfg        Config
 	live       []string
 	seq        int64
-	instanceID string // unique per-instance prefix prevents ID collisions across restarts
+	instanceID string
 	lastPrice  decimal.Decimal
 }
 
-func New(eng *engine.Engine, feed PriceSource, cfg Config) *Maker {
-	// Use startup timestamp (nanoseconds) as an instance discriminator.
+func New(eng *engine.Engine, symbol string, feed PriceSource, cfg Config) *Maker {
 	return &Maker{
 		eng:        eng,
+		symbol:     symbol,
 		feed:       feed,
 		cfg:        cfg,
 		instanceID: fmt.Sprintf("%d", time.Now().UnixNano()),
@@ -52,8 +53,6 @@ func New(eng *engine.Engine, feed PriceSource, cfg Config) *Maker {
 }
 
 func (m *Maker) Run(ctx context.Context) {
-	// Cancel all open maker quotes on exit, whether due to context cancellation
-	// or a panic, so stale orders do not linger in the book.
 	defer m.cancelAll()
 
 	ticker := time.NewTicker(m.cfg.Requote)
@@ -92,9 +91,9 @@ func (m *Maker) requote() {
 func (m *Maker) place(side engine.Side, price decimal.Decimal) {
 	m.seq++
 	id := fmt.Sprintf("mm-%s-%d", m.instanceID, m.seq)
-	o := engine.NewOrder(id, "BTC-USD", side, engine.Limit, price, m.cfg.QtyPerLevel)
+	o := engine.NewOrder(id, m.symbol, side, engine.Limit, price, m.cfg.QtyPerLevel)
 	if err := m.eng.Submit(o); err != nil {
-		return // retried implicitly on the next requote
+		return
 	}
 	if o.Status == engine.StatusOpen || o.Status == engine.StatusPartial {
 		m.live = append(m.live, id)

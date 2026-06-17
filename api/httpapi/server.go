@@ -21,44 +21,49 @@ type contextKey string
 const ctxSession contextKey = "session"
 
 var (
-	startUSD = decimal.RequireFromString("100000.00")
-	startBTC = decimal.RequireFromString("2.0000")
+	startUSD    = decimal.RequireFromString("100000.00")
+	startTokens = map[string]decimal.Decimal{
+		"BTC": decimal.RequireFromString("2.0000"),
+		"ETH": decimal.RequireFromString("10.0000"),
+		"SOL": decimal.RequireFromString("200.0000"),
+	}
 )
 
 // balance holds a session's funds. All mutations happen under balanceMu.
 type balance struct {
-	USD decimal.Decimal
-	BTC decimal.Decimal
-	// Funds held by open orders. Available = total − reserved.
-	ReservedUSD decimal.Decimal
-	ReservedBTC decimal.Decimal
+	USD            decimal.Decimal
+	Tokens         map[string]decimal.Decimal // base token → amount (BTC, ETH, SOL…)
+	ReservedUSD    decimal.Decimal
+	ReservedTokens map[string]decimal.Decimal // base token → reserved
 }
 
 // reservation tracks the hold one open order has on its session's balance.
 type reservation struct {
 	sessID     string
 	side       engine.Side
+	baseToken  string          // which base token is held for sell orders
 	perUnitUSD decimal.Decimal // USD held per unit qty (buy orders only)
 	qtyLeft    decimal.Decimal // unfilled quantity still held
 }
 
 type orderRecord struct {
 	ID        string          `json:"id"`
+	Symbol    string          `json:"symbol"`
 	Username  string          `json:"username"`
 	Side      string          `json:"side"`
 	Type      string          `json:"type"`
 	Price     string          `json:"price"`
 	Qty       string          `json:"qty"`
 	Status    string          `json:"status"`
-	Reason    string          `json:"reason,omitempty"` // why the order was rejected
-	FilledQty decimal.Decimal `json:"filled_qty"`       // cumulative executed quantity
-	CostUSD   decimal.Decimal `json:"total_cost"`       // cumulative executed value (Σ fill qty × fill price)
+	Reason    string          `json:"reason,omitempty"`
+	FilledQty decimal.Decimal `json:"filled_qty"`
+	CostUSD   decimal.Decimal `json:"total_cost"`
 	CreatedAt time.Time       `json:"created_at"`
 }
 
 type Server struct {
-	eng    *engine.Engine
-	events <-chan engine.Event
+	engines map[string]*engine.Engine // symbol → engine
+	events  <-chan engine.Event
 
 	// SSE fan-out
 	mu   sync.RWMutex
@@ -75,26 +80,36 @@ type Server struct {
 	balances     map[string]*balance     // sessID  → balance
 	reservations map[string]*reservation // orderID → hold
 
-	// Last external index price, replayed to new SSE connections.
-	indexMu    sync.RWMutex
-	indexPrice decimal.Decimal
-	indexOK    bool
+	// Last external index price per symbol, replayed to new SSE connections.
+	indexMu     sync.RWMutex
+	indexPrices map[string]decimal.Decimal
+	indexOKs    map[string]bool
 
 	activeConns int64 // atomic
 }
 
-func NewServer(eng *engine.Engine, events <-chan engine.Event) *Server {
+func NewServer(engines map[string]*engine.Engine, events <-chan engine.Event) *Server {
 	s := &Server{
-		eng:            eng,
+		engines:        engines,
 		events:         events,
 		orders:         make(map[string]*orderRecord),
 		sessions:       make(map[string][]string),
 		sessionByOrder: make(map[string]string),
 		balances:       make(map[string]*balance),
 		reservations:   make(map[string]*reservation),
+		indexPrices:    make(map[string]decimal.Decimal),
+		indexOKs:       make(map[string]bool),
 	}
 	go s.fanOut()
 	return s
+}
+
+// baseTokenOf extracts the base token from a symbol ("ETH-USD" → "ETH").
+func baseTokenOf(symbol string) string {
+	if i := strings.Index(symbol, "-"); i >= 0 {
+		return symbol[:i]
+	}
+	return symbol
 }
 
 // ── Fan-out ───────────────────────────────────────────────────────────────────
@@ -117,26 +132,25 @@ func (s *Server) broadcast(ev engine.Event) {
 	s.mu.RUnlock()
 }
 
-// BroadcastIndexPrice pushes the external index price to all SSE clients.
-func (s *Server) BroadcastIndexPrice(p decimal.Decimal) {
+// BroadcastIndexPrice pushes an external index price for a given symbol to all SSE clients.
+func (s *Server) BroadcastIndexPrice(symbol string, p decimal.Decimal) {
 	s.indexMu.Lock()
-	s.indexPrice = p
-	s.indexOK = true
+	s.indexPrices[symbol] = p
+	s.indexOKs[symbol] = true
 	s.indexMu.Unlock()
-	s.broadcast(indexPriceEvent(p))
+	s.broadcast(indexPriceEvent(symbol, p))
 }
 
-func indexPriceEvent(p decimal.Decimal) engine.Event {
+func indexPriceEvent(symbol string, p decimal.Decimal) engine.Event {
 	return engine.Event{
 		Type:      "INDEX_PRICE",
-		Symbol:    "BTC-USD",
+		Symbol:    symbol,
 		Price:     p,
 		Timestamp: time.Now(),
 	}
 }
 
 func (s *Server) applyEventToRecords(ev engine.Event) {
-	// Update order status
 	if ev.OrderID != "" {
 		var status string
 		switch ev.Type {
@@ -161,10 +175,6 @@ func (s *Server) applyEventToRecords(ev engine.Event) {
 		}
 	}
 
-	// Release holds on terminal events.
-	// Cancels/rejects free the full remainder. Fills are drained incrementally
-	// via trade events (releaseQty), but releaseAll on EvOrderFilled is a
-	// defensive no-op that covers any residual if trade accounting ever drifts.
 	if ev.OrderID != "" &&
 		(ev.Type == engine.EvOrderCancelled ||
 			ev.Type == engine.EvOrderRejected ||
@@ -172,7 +182,6 @@ func (s *Server) applyEventToRecords(ev engine.Event) {
 		s.releaseAll(ev.OrderID)
 	}
 
-	// Update balances and per-order fill totals on every trade
 	if ev.Type == engine.EvTrade {
 		s.recordFill(ev.MakerID, ev.Qty, ev.Price)
 		s.recordFill(ev.TakerID, ev.Qty, ev.Price)
@@ -180,9 +189,6 @@ func (s *Server) applyEventToRecords(ev engine.Event) {
 	}
 }
 
-// recordFill accumulates an order's executed quantity and cost so clients can
-// see what was actually paid (which differs from limit price × qty for
-// partial fills, multi-level sweeps, and AMM curve fills).
 func (s *Server) recordFill(orderID string, qty, price decimal.Decimal) {
 	if orderID == "" {
 		return
@@ -195,7 +201,6 @@ func (s *Server) recordFill(orderID string, qty, price decimal.Decimal) {
 	s.orderMu.Unlock()
 }
 
-// applyTradeToBalances debits and credits both sides of a trade.
 func (s *Server) applyTradeToBalances(ev engine.Event) {
 	s.releaseQty(ev.MakerID, ev.Qty)
 	s.releaseQty(ev.TakerID, ev.Qty)
@@ -207,6 +212,7 @@ func (s *Server) applyTradeToBalances(ev engine.Event) {
 	takerSess := s.sessionByOrder[ev.TakerID]
 	s.orderMu.RUnlock()
 
+	baseToken := baseTokenOf(ev.Symbol)
 	cost := ev.Qty.Mul(ev.Price)
 
 	s.balanceMu.Lock()
@@ -214,35 +220,35 @@ func (s *Server) applyTradeToBalances(ev engine.Event) {
 		bal := s.ensureBalance(makerSess)
 		if makerRec.Side == "buy" {
 			bal.USD = bal.USD.Sub(cost)
-			bal.BTC = bal.BTC.Add(ev.Qty)
+			bal.Tokens[baseToken] = bal.Tokens[baseToken].Add(ev.Qty)
 		} else {
 			bal.USD = bal.USD.Add(cost)
-			bal.BTC = bal.BTC.Sub(ev.Qty)
+			bal.Tokens[baseToken] = bal.Tokens[baseToken].Sub(ev.Qty)
 		}
 	}
 	if takerRec != nil && takerSess != "" {
 		bal := s.ensureBalance(takerSess)
 		if takerRec.Side == "buy" {
 			bal.USD = bal.USD.Sub(cost)
-			bal.BTC = bal.BTC.Add(ev.Qty)
+			bal.Tokens[baseToken] = bal.Tokens[baseToken].Add(ev.Qty)
 		} else {
 			bal.USD = bal.USD.Add(cost)
-			bal.BTC = bal.BTC.Sub(ev.Qty)
+			bal.Tokens[baseToken] = bal.Tokens[baseToken].Sub(ev.Qty)
 		}
 	}
 	s.balanceMu.Unlock()
 }
 
 // reserve places a hold for a new open order. Caller must hold balanceMu write lock.
-func (s *Server) reserve(sessID, orderID string, side engine.Side, perUnitUSD, qty decimal.Decimal) {
+func (s *Server) reserve(sessID, orderID string, side engine.Side, baseToken string, perUnitUSD, qty decimal.Decimal) {
 	bal := s.ensureBalance(sessID)
 	s.reservations[orderID] = &reservation{
-		sessID: sessID, side: side, perUnitUSD: perUnitUSD, qtyLeft: qty,
+		sessID: sessID, side: side, baseToken: baseToken, perUnitUSD: perUnitUSD, qtyLeft: qty,
 	}
 	if side == engine.Buy {
 		bal.ReservedUSD = bal.ReservedUSD.Add(perUnitUSD.Mul(qty))
 	} else {
-		bal.ReservedBTC = bal.ReservedBTC.Add(qty)
+		bal.ReservedTokens[baseToken] = bal.ReservedTokens[baseToken].Add(qty)
 	}
 }
 
@@ -261,7 +267,7 @@ func (s *Server) releaseQty(orderID string, qty decimal.Decimal) {
 	if r.side == engine.Buy {
 		bal.ReservedUSD = bal.ReservedUSD.Sub(r.perUnitUSD.Mul(qty))
 	} else {
-		bal.ReservedBTC = bal.ReservedBTC.Sub(qty)
+		bal.ReservedTokens[r.baseToken] = bal.ReservedTokens[r.baseToken].Sub(qty)
 	}
 	r.qtyLeft = r.qtyLeft.Sub(qty)
 	if r.qtyLeft.LessThanOrEqual(decimal.Zero) {
@@ -281,7 +287,7 @@ func (s *Server) releaseAll(orderID string) {
 	if r.side == engine.Buy {
 		bal.ReservedUSD = bal.ReservedUSD.Sub(r.perUnitUSD.Mul(r.qtyLeft))
 	} else {
-		bal.ReservedBTC = bal.ReservedBTC.Sub(r.qtyLeft)
+		bal.ReservedTokens[r.baseToken] = bal.ReservedTokens[r.baseToken].Sub(r.qtyLeft)
 	}
 	delete(s.reservations, orderID)
 }
@@ -292,7 +298,18 @@ func (s *Server) ensureBalance(sessID string) *balance {
 	if bal, ok := s.balances[sessID]; ok {
 		return bal
 	}
-	bal := &balance{USD: startUSD, BTC: startBTC}
+	tokens := make(map[string]decimal.Decimal, len(startTokens))
+	reserved := make(map[string]decimal.Decimal, len(startTokens))
+	for t, amt := range startTokens {
+		tokens[t] = amt
+		reserved[t] = decimal.Zero
+	}
+	bal := &balance{
+		USD:            startUSD,
+		Tokens:         tokens,
+		ReservedUSD:    decimal.Zero,
+		ReservedTokens: reserved,
+	}
 	s.balances[sessID] = bal
 	return bal
 }
@@ -329,6 +346,7 @@ func (s *Server) Handler(frontendDir string) http.Handler {
 	mux.HandleFunc("/api/me/orders", s.handleMyOrders)
 	mux.HandleFunc("/api/me/balance", s.handleBalance)
 	mux.HandleFunc("/api/presence", s.handlePresence)
+	mux.HandleFunc("/api/symbols", s.handleSymbols)
 	mux.Handle("/", http.FileServer(http.Dir(frontendDir)))
 	return corsMiddleware(s.sessionMiddleware(mux))
 }
@@ -348,7 +366,6 @@ func ensureSession(w http.ResponseWriter, r *http.Request) string {
 		return c.Value
 	}
 	id := uuid.New().String()
-	// Set Secure when the connection is HTTPS (direct TLS or behind a proxy).
 	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session_id",
@@ -405,7 +422,6 @@ func sanitizeUsername(s string) string {
 	if s == "" {
 		return "anonymous"
 	}
-	// Remove HTML-dangerous runes.
 	s = strings.Map(func(r rune) rune {
 		if r == '<' || r == '>' || r == '"' || r == '\'' || r == '&' || !unicode.IsPrint(r) {
 			return -1
@@ -440,6 +456,14 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		req.ID = uuid.New().String()
 	}
 
+	eng, ok := s.engines[req.Symbol]
+	if !ok {
+		writeError(w, "unknown symbol: "+req.Symbol, http.StatusBadRequest)
+		return
+	}
+
+	baseToken := baseTokenOf(req.Symbol)
+
 	side := engine.Side(strings.ToLower(req.Side))
 	if side != engine.Buy && side != engine.Sell {
 		writeError(w, "side must be 'buy' or 'sell'", http.StatusBadRequest)
@@ -467,17 +491,11 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Check available balance (total minus holds from open orders), then
-	// place a hold for this order.
 	sess := sessionFrom(r)
 
-	// Market buys have no limit price: hold bestAsk × 1.05 per unit.
-	// The snapshot is taken before the lock; the check+reserve inside the lock
-	// serialises concurrent requests correctly (second request sees the first's
-	// reservation when it re-reads the available balance).
 	perUnitUSD := price
 	if side == engine.Buy && otype == engine.Market {
-		snap, snapErr := s.eng.Snapshot()
+		snap, snapErr := eng.Snapshot()
 		if snapErr != nil {
 			writeError(w, "engine unavailable", http.StatusServiceUnavailable)
 			return
@@ -512,23 +530,24 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if side == engine.Sell {
-		available := bal.BTC.Sub(bal.ReservedBTC)
+		available := bal.Tokens[baseToken].Sub(bal.ReservedTokens[baseToken])
 		if available.LessThan(qty) {
 			s.balanceMu.Unlock()
 			writeJSON(w, submitResponse{
 				OrderID: req.ID,
-				Error:   fmt.Sprintf("insufficient BTC balance — need %s BTC, have %s BTC available", qty.StringFixed(4), available.StringFixed(4)),
+				Error:   fmt.Sprintf("insufficient %s balance — need %s %s, have %s %s available", baseToken, qty.StringFixed(4), baseToken, available.StringFixed(4), baseToken),
 			}, http.StatusOK)
 			return
 		}
 	}
-	s.reserve(sess, req.ID, side, perUnitUSD, qty)
+	s.reserve(sess, req.ID, side, baseToken, perUnitUSD, qty)
 	s.balanceMu.Unlock()
 
 	o := engine.NewOrder(req.ID, req.Symbol, side, otype, price, qty)
 
 	rec := &orderRecord{
 		ID:        o.ID,
+		Symbol:    req.Symbol,
 		Username:  sanitizeUsername(req.Username),
 		Side:      string(side),
 		Type:      string(otype),
@@ -544,7 +563,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	s.sessionByOrder[o.ID] = sess
 	s.orderMu.Unlock()
 
-	if err := s.eng.Submit(o); err != nil {
+	if err := eng.Submit(o); err != nil {
 		s.releaseAll(o.ID)
 		s.orderMu.Lock()
 		rec.Status = "REJECTED"
@@ -568,10 +587,10 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify that the order belongs to the requesting session.
 	sess := sessionFrom(r)
 	s.orderMu.RLock()
 	owner := s.sessionByOrder[id]
+	rec := s.orders[id]
 	s.orderMu.RUnlock()
 
 	if owner == "" || owner != sess {
@@ -579,7 +598,20 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.eng.Cancel(id); err != nil {
+	var symbol string
+	if rec != nil {
+		symbol = rec.Symbol
+	}
+	eng, ok := s.engines[symbol]
+	if !ok {
+		// Fall back to first engine if symbol not found (shouldn't happen)
+		for _, e := range s.engines {
+			eng = e
+			break
+		}
+	}
+
+	if err := eng.Cancel(id); err != nil {
 		writeJSON(w, map[string]interface{}{"success": false, "error": err.Error()}, http.StatusOK)
 		return
 	}
@@ -591,7 +623,16 @@ func (s *Server) handleBook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	snap, err := s.eng.Snapshot()
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		symbol = "BTC-USD"
+	}
+	eng, ok := s.engines[symbol]
+	if !ok {
+		writeError(w, "unknown symbol: "+symbol, http.StatusBadRequest)
+		return
+	}
+	snap, err := eng.Snapshot()
 	if err != nil {
 		writeError(w, "engine unavailable", http.StatusServiceUnavailable)
 		return
@@ -620,10 +661,10 @@ func (s *Server) handleMyOrders(w http.ResponseWriter, r *http.Request) {
 }
 
 type balanceResponse struct {
-	USD      string `json:"usd"`
-	BTC      string `json:"btc"`
-	StartUSD string `json:"start_usd"`
-	StartBTC string `json:"start_btc"`
+	USD         string            `json:"usd"`
+	Tokens      map[string]string `json:"tokens"`
+	StartUSD    string            `json:"start_usd"`
+	StartTokens map[string]string `json:"start_tokens"`
 }
 
 func (s *Server) handleBalance(w http.ResponseWriter, r *http.Request) {
@@ -634,31 +675,66 @@ func (s *Server) handleBalance(w http.ResponseWriter, r *http.Request) {
 
 	sess := sessionFrom(r)
 
-	// Fast path: read lock only, copy values before releasing.
 	s.balanceMu.RLock()
 	bal, exists := s.balances[sess]
-	var usd, btc decimal.Decimal
+	var usd decimal.Decimal
+	tokens := make(map[string]decimal.Decimal, len(startTokens))
 	if exists {
 		usd = bal.USD
-		btc = bal.BTC
+		for k, v := range bal.Tokens {
+			tokens[k] = v
+		}
 	}
 	s.balanceMu.RUnlock()
 
 	if !exists {
-		// Slow path: initialise balance under write lock.
 		s.balanceMu.Lock()
 		bal = s.ensureBalance(sess)
 		usd = bal.USD
-		btc = bal.BTC
+		for k, v := range bal.Tokens {
+			tokens[k] = v
+		}
 		s.balanceMu.Unlock()
 	}
 
+	tokenStrs := make(map[string]string, len(tokens))
+	for k, v := range tokens {
+		tokenStrs[k] = v.StringFixed(4)
+	}
+	startTokenStrs := make(map[string]string, len(startTokens))
+	for k, v := range startTokens {
+		startTokenStrs[k] = v.StringFixed(4)
+	}
+
 	writeJSON(w, balanceResponse{
-		USD:      usd.StringFixed(2),
-		BTC:      btc.StringFixed(4),
-		StartUSD: startUSD.StringFixed(2),
-		StartBTC: startBTC.StringFixed(4),
+		USD:         usd.StringFixed(2),
+		Tokens:      tokenStrs,
+		StartUSD:    startUSD.StringFixed(2),
+		StartTokens: startTokenStrs,
 	}, http.StatusOK)
+}
+
+type symbolInfo struct {
+	Symbol string `json:"symbol"`
+	Base   string `json:"base"`
+	Quote  string `json:"quote"`
+}
+
+func (s *Server) handleSymbols(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	result := make([]symbolInfo, 0, len(s.engines))
+	for sym := range s.engines {
+		parts := strings.SplitN(sym, "-", 2)
+		base, quote := sym, "USD"
+		if len(parts) == 2 {
+			base, quote = parts[0], parts[1]
+		}
+		result = append(result, symbolInfo{Symbol: sym, Base: base, Quote: quote})
+	}
+	writeJSON(w, result, http.StatusOK)
 }
 
 func (s *Server) handlePresence(w http.ResponseWriter, r *http.Request) {
@@ -688,12 +764,14 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	ch := s.subscribe()
 	defer s.unsubscribe(ch)
 
-	// Replay the last index price so new clients see it immediately.
+	// Replay all known index prices so new clients see them immediately.
 	s.indexMu.RLock()
-	if s.indexOK {
-		if data, err := json.Marshal(indexPriceEvent(s.indexPrice)); err == nil {
-			fmt.Fprintf(w, "data: %s\n\n", data)
-			flusher.Flush()
+	for sym, price := range s.indexPrices {
+		if s.indexOKs[sym] {
+			if data, err := json.Marshal(indexPriceEvent(sym, price)); err == nil {
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
+			}
 		}
 	}
 	s.indexMu.RUnlock()

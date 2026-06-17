@@ -11,7 +11,8 @@ func newTestServer() *Server {
 	events := make(chan engine.Event, 4096)
 	eng := engine.NewEngine("BTC-USD", events)
 	go eng.Run()
-	return NewServer(eng, events)
+	engs := map[string]*engine.Engine{"BTC-USD": eng}
+	return NewServer(engs, events)
 }
 
 func d(s string) decimal.Decimal { return decimal.RequireFromString(s) }
@@ -20,7 +21,7 @@ func TestReserveReducesAvailable(t *testing.T) {
 	s := newTestServer()
 
 	s.balanceMu.Lock()
-	s.reserve("sess1", "o1", engine.Buy, d("50000"), d("1"))
+	s.reserve("sess1", "o1", engine.Buy, "BTC", d("50000"), d("1"))
 	bal := s.ensureBalance("sess1")
 	availUSD := bal.USD.Sub(bal.ReservedUSD)
 	s.balanceMu.Unlock()
@@ -35,16 +36,17 @@ func TestCancelReleasesReservation(t *testing.T) {
 	s := newTestServer()
 
 	s.balanceMu.Lock()
-	s.reserve("sess1", "o1", engine.Sell, decimal.Zero, d("1.5"))
+	s.reserve("sess1", "o1", engine.Sell, "BTC", decimal.Zero, d("1.5"))
 	s.balanceMu.Unlock()
 
 	s.applyEventToRecords(engine.Event{Type: engine.EvOrderCancelled, OrderID: "o1"})
 
 	s.balanceMu.Lock()
 	bal := s.ensureBalance("sess1")
+	reserved := bal.ReservedTokens["BTC"]
 	s.balanceMu.Unlock()
-	if !bal.ReservedBTC.IsZero() {
-		t.Fatalf("ReservedBTC = %s, want 0", bal.ReservedBTC)
+	if !reserved.IsZero() {
+		t.Fatalf("ReservedTokens[BTC] = %s, want 0", reserved)
 	}
 }
 
@@ -53,17 +55,17 @@ func TestFillReleasesFilledPortion(t *testing.T) {
 
 	// Register the order so the trade event finds its record + session.
 	s.orderMu.Lock()
-	s.orders["o1"] = &orderRecord{ID: "o1", Side: "buy"}
+	s.orders["o1"] = &orderRecord{ID: "o1", Symbol: "BTC-USD", Side: "buy"}
 	s.sessionByOrder["o1"] = "sess1"
 	s.orderMu.Unlock()
 
 	s.balanceMu.Lock()
-	s.reserve("sess1", "o1", engine.Buy, d("50000"), d("1"))
+	s.reserve("sess1", "o1", engine.Buy, "BTC", d("50000"), d("1"))
 	s.balanceMu.Unlock()
 
 	// Half fills at a better price; hold released at the reserved rate.
 	s.applyEventToRecords(engine.Event{
-		Type: engine.EvTrade, TakerID: "o1", MakerID: "other",
+		Type: engine.EvTrade, Symbol: "BTC-USD", TakerID: "o1", MakerID: "other",
 		Price: d("49000"), Qty: d("0.5"),
 	})
 
@@ -84,7 +86,7 @@ func TestBroadcastIndexPriceReachesSubscribers(t *testing.T) {
 	ch := s.subscribe()
 	defer s.unsubscribe(ch)
 
-	s.BroadcastIndexPrice(d("104231.50"))
+	s.BroadcastIndexPrice("BTC-USD", d("104231.50"))
 
 	select {
 	case ev := <-ch:

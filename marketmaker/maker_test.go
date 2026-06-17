@@ -24,7 +24,7 @@ func TestRequotePlacesLadder(t *testing.T) {
 	eng := newTestEngine()
 	defer eng.Stop()
 	feed := &fakeFeed{price: decimal.RequireFromString("100000"), ok: true}
-	m := New(eng, feed, DefaultConfig())
+	m := New(eng, "BTC-USD", feed, DefaultConfig())
 
 	m.requote()
 
@@ -49,7 +49,7 @@ func TestRequoteReplacesOldLadder(t *testing.T) {
 	eng := newTestEngine()
 	defer eng.Stop()
 	feed := &fakeFeed{price: decimal.RequireFromString("100000"), ok: true}
-	m := New(eng, feed, DefaultConfig())
+	m := New(eng, "BTC-USD", feed, DefaultConfig())
 
 	m.requote()
 	feed.price = decimal.RequireFromString("110000")
@@ -68,7 +68,7 @@ func TestRequoteReplacesOldLadder(t *testing.T) {
 func TestRequoteIdleWithoutPrice(t *testing.T) {
 	eng := newTestEngine()
 	defer eng.Stop()
-	m := New(eng, &fakeFeed{ok: false}, DefaultConfig())
+	m := New(eng, "BTC-USD", &fakeFeed{ok: false}, DefaultConfig())
 
 	m.requote()
 
